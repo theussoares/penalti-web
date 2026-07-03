@@ -1,40 +1,70 @@
 # Status do projeto — Penalti Premiado 3D
 
 > Nota de retomada. Última atualização: 2026-07-03 (sessão longa: motor 3D +
-> ambientação + fundo de imagem + mira automática). Se você é uma sessão nova
-> pegando este projeto, leia isto primeiro, depois os planos/specs
-> referenciados abaixo.
+> ambientação + fundo de imagem + mira automática + jogo profissionalizado).
+> Se você é uma sessão nova pegando este projeto, leia isto primeiro, depois
+> os planos/specs referenciados abaixo.
 
-## Feito nesta rodada: mira automática + resultado pré-definido pela API
+## Feito nesta rodada: jogo profissionalizado (sessão de chances, histórico, chutar tudo, replay, modais da Roleta)
 
-**`docs/superpowers/specs/2026-07-03-mira-automatica-resultado-api-design.md`**
-(spec) + **`docs/superpowers/plans/2026-07-03-mira-automatica-resultado-api.md`**
-(plano, 5 tasks, executado via `subagent-driven-development`, todas as
-tasks + revisão final de branch aprovadas sem Critical/Important) —
-a mira deixou de ser por toque/arraste e passou a ser automática (vaivém
-esquerda↔direita, altura fixa do goleiro, `WorldLayout.keeperHeight`) com um
-botão "Chutar"; o resultado (gol/defesa + prêmio) vem de uma sequência
-pré-buscada da API no primeiro chute (`fetchPlaySequence`, reaproveitando o
-vocabulário `tipo_acao`/`tipo_premio`/`chave_giro` dos mocks de Roleta), e o
-goleiro só "encena" esse resultado já definido — mergulha exato se for
-defesa, longe se for gol (`computeDiveTarget`). O desfecho "pra fora" foi
-removido (`ShotOutcome` agora é só `'goal' | 'save'`).
+**`docs/superpowers/specs/2026-07-03-jogo-profissionalizado-design.md`**
+(spec) + **`docs/superpowers/plans/2026-07-03-jogo-profissionalizado.md`**
+(plano, 8 tasks, executado via `subagent-driven-development`, todas as
+tasks + revisão final de branch aprovadas sem Critical/Important) — o jogo
+deixou de ser "infinito" (lotes de 10 resultados reabastecidos pra sempre) e
+passou a ter uma **sessão de chances finita vinda da API**:
 
-Saíram do código (motor 3D e UI, não o motor 2D morto — ver "Decisões
-importantes" abaixo): `aimInput.ts` (raycasting de mira por toque),
-`decideShot`/`ShotDecision` (`goalkeeperAI.ts`), `submitPlay`/`mockPrize`/
-`Prize`/`PrizeType`/`formatMoney` (`useGameApi.ts`), os handlers
-`onPointerDown/Move/Up` e o modal de "Pra fora!" (`PenaltyGame.client.vue`).
+- `fetchPlaySequence` agora é chamado **uma única vez por sessão**, no
+  primeiro "Chutar" (`MOCK_SESSION_SIZE = 5` no mock). Removidos
+  `SEQUENCE_BATCH_SIZE`/`REFILL_THRESHOLD`/`maybeRefill`/`nextPlayResult`.
+- **Prêmio de replay ("Chute Extra")**: `tipo_acao`/`tipo_premio` ganharam o
+  valor `'replay'` (igual ao padrão real da Roleta, confirmado direto no
+  código-fonte de `play-components-web/src/components/Roleta`). Replay não
+  decrementa `chancesRestantes` (`app/game/session.ts`), mas ainda precisa
+  ser "jogado" (a sessão só acaba quando a fila fica vazia,
+  `isSessionOver`). O goleiro anima normalmente (fisicamente sempre como
+  `'save'`, já que a engine só tem `'goal'|'save'`), e quem decide o modal
+  certo é `onResult()` lendo `tipo_acao`, não o resultado físico.
+- **Contador de chances** (`.chances-hud`) sobre o telão, e **barra de
+  histórico** (`HistoricoBar.vue`, últimos 8 resultados com ícone por tipo)
+  acima do botão "Chutar".
+- **"Chutar tudo"**: habilitado com mais de 1 chance restante. Ao contrário
+  da primeira ideia (re-animar a engine por chute), segue o padrão real da
+  Roleta (`confirmarGirarTodas` em `useGirarRoleta.ts`) — resolve todos os
+  itens restantes **só nos dados**, com um loading falso de 1.5s, sem
+  disparar `engine.shoot()` por item. Modal de confirmação + progresso
+  (`ModalChutarTudoConfirm.vue`) e resumo final só com os prêmios ganhos
+  (`ModalResumoChutarTudo.vue`, via `filtrarPremiosGanhados`).
+- **Modais reais**: os cards de vitória/derrota inline em
+  `PenaltyGame.client.vue` viraram componentes de verdade em
+  `app/components/Modais/` — `ModalArea`/`Botao` (base reutilizável),
+  `ModalGol`/`ModalDefendeu`/`ModalChuteExtra` (resultado),
+  `ModalChutarTudoConfirm`/`ModalResumoChutarTudo` (lote). Estruturados no
+  mesmo espírito dos modais da Roleta, mas sem Pinia/PIX/checkout (não
+  existem nesse projeto).
+- **Mocks de cenário fixo** (`app/mocks/penaltySequences.ts`,
+  `PENALTY_SCENARIOS`) selecionáveis via `?cenario=<chave>` (ex.
+  `?cenario=todas_derrotas`) para testar fluxos manualmente sem depender do
+  gerador aleatório — chaves disponíveis: `todas_derrotas`,
+  `todos_ganhos_valor`, `todos_ganhos_cota`, `todos_replays`, `alternado`,
+  `valores_altos`, `replay_depois_ganho`.
 
-Pendências abertas desta rodada (Minor, não bloqueantes, registradas na
-revisão final):
-- `maybeRefill`/`nextPlayResult` (`PenaltyGame.client.vue`) não têm
-  `.catch` — inofensivo com `USE_MOCK = true` (a promise nunca rejeita),
-  mas travaria o botão "Chutar" permanentemente se a API real falhar.
-  Adicionar `try/catch` antes de trocar `USE_MOCK` para `false`.
-- `MOCK_GAMES.headline` em `useGameApi.ts` ainda menciona "números da
-  sorte", mas esse tipo de prêmio não existe mais na sequência (só
-  `valor`/`cota`) — copy desatualizada, cosmético.
+Verificação manual feita direto nesta sessão (não por subagente, já que
+exige interação com o navegador via Claude Preview): fluxo normal,
+`todas_derrotas` (5x "Defendeu!", "Jogar novamente" no último),
+`todos_replays` (5x "Chute Extra!", contador nunca decrementa, sessão
+termina por fila vazia mesmo com contador em 0 o tempo todo), `alternado` +
+"Chutar tudo" (resumo lista só o prêmio ganho certo, exclui replay/derrota),
+"Chutar tudo" desabilitado com ≤1 chance — tudo passou, zero erros de
+console. `npm run test:unit`: 34 testes, 8 arquivos, tudo verde.
+
+**Nota de ferramenta** (não é bug do jogo): durante a verificação manual,
+clicar via `document.querySelector(...).click()` dentro de `preview_eval`
+produziu 4 invocações fantasmas do mesmo handler por clique (unrelated à
+lógica do app — confirmado com uma instrumentação temporária de
+`console.log` depois revertida). Usar sempre `preview_click`/`preview_fill`
+para interação real nesse projeto; `preview_eval` só para leitura de
+estado/DOM.
 
 ## Onde as coisas estão
 
@@ -43,7 +73,7 @@ mas não é mais usado) para Three.js/WebGL (`app/game/engine3d/`), orquestrado
 por `PenaltyEngine3D` (`app/game/engine3d/penaltyEngine3d.ts`), já ligado em
 `app/components/PenaltyGame.client.vue`.
 
-Quatro rodadas de trabalho até agora:
+Cinco rodadas de trabalho até agora:
 
 1. **`docs/superpowers/specs/2026-07-03-motor-3d-threejs-design.md`** (spec) +
    **`docs/superpowers/plans/2026-07-03-motor-3d-threejs.md`** (plano, 16
@@ -64,15 +94,20 @@ Quatro rodadas de trabalho até agora:
    o usuário. Commit `4c83f05`.
 4. **`docs/superpowers/specs/2026-07-03-mira-automatica-resultado-api-design.md`**
    (spec) + **`docs/superpowers/plans/2026-07-03-mira-automatica-resultado-api.md`**
-   (plano, 5 tasks) — mira automática + resultado pré-definido pela API (ver
-   secção "Feito nesta rodada" acima). Executado via `subagent-driven-development`
-   nesta mesma sessão, todas as tasks e a revisão final de branch aprovadas.
+   (plano, 5 tasks) — mira automática (vaivém esquerda↔direita, altura fixa
+   do goleiro) com botão "Chutar"; resultado vem pronto da API antes da
+   jogada, goleiro só encena (`computeDiveTarget`). Desfecho "pra fora"
+   removido (`ShotOutcome` só `'goal'|'save'`).
+5. **`docs/superpowers/specs/2026-07-03-jogo-profissionalizado-design.md`**
+   (spec) + **`docs/superpowers/plans/2026-07-03-jogo-profissionalizado.md`**
+   (plano, 8 tasks) — sessão de chances finita, replay/"Chute Extra",
+   contador de chances, barra de histórico, "Chutar tudo", modais reais
+   estruturados como os da Roleta (ver secção "Feito nesta rodada" acima).
 
 **As rodadas 1 e 2 foram executadas por duas sessões de Claude Code rodando
-em paralelo no mesmo repositório**, sem coordenação direta entre si — o que
-gerou alguma confusão (resets de estado durante testes manuais, hot-reload
-cruzado). Se você notar comportamento estranho num teste manual, considere
-que pode haver outra sessão mexendo nos mesmos arquivos ao mesmo tempo.
+em paralelo no mesmo repositório**, sem coordenação direta entre si. Isso
+**terminou** a partir da rodada 4 — o usuário confirmou explicitamente que só
+há uma sessão trabalhando no projeto agora.
 
 ## Decisões importantes já tomadas (não reabrir sem necessidade)
 
@@ -80,7 +115,10 @@ que pode haver outra sessão mexendo nos mesmos arquivos ao mesmo tempo.
   explicitamente para simplificar isso (ver commit `34012da`).
 - **Personagens (goleiro parado/batedor) são procedurais** (cápsulas
   low-poly, `proceduralCharacter.ts`) — não existe pacote gratuito de
-  jogador+goleiro riggado com chute/mergulho pronto pra uso.
+  jogador+goleiro riggado com chute/mergulho pronto pra uso. **Atualização**:
+  o usuário adicionou um `jogador_final.glb` (modelo real do batedor, com
+  idle e chute) na raiz do repo, ainda **não commitado nem integrado** —
+  próximo passo natural, ver "Pendências conhecidas".
 - **Exceção**: o goleiro usa o modelo `.glb` real fornecido pelo usuário
   (`public/models/goalkeeper-dive.glb`) para TODAS as fases agora (idle com
   o clipe base em loop, e os 3 clipes de mergulho por direção) — o
@@ -94,24 +132,31 @@ que pode haver outra sessão mexendo nos mesmos arquivos ao mesmo tempo.
   versão intermediária.
 - **Fundo é uma imagem estática gerada por IA**, não mais 3D procedural —
   `buildCrowdBillboard`, `buildStadiumLights`, `buildAdBoards` e
-  `buildAmbientEffects` (torcida, refletores, telão, fumaça/bandeiras — toda
-  a Task 2 do plano de ambientação) **foram removidos do orquestrador**
-  (`penaltyEngine3d.ts`) nesta terceira rodada, embora os arquivos-fonte
-  ainda existam em `app/game/engine3d/` sem uso. `buildFieldAtmosphere`
-  (partículas/sheen) foi o único efeito ambiente 3D mantido, como brilho
-  sutil por cima da foto. O renderer roda com `alpha: true` para a imagem
-  aparecer atrás da cena WebGL.
+  `buildAmbientEffects` **foram removidos do orquestrador**
+  (`penaltyEngine3d.ts`), embora os arquivos-fonte ainda existam em
+  `app/game/engine3d/` sem uso. `buildFieldAtmosphere` (partículas/sheen)
+  foi o único efeito ambiente 3D mantido. O renderer roda com `alpha: true`
+  para a imagem aparecer atrás da cena WebGL.
+- **Sessão de jogo é finita e vem da API** (rodada 5) — nada de
+  reabastecimento automático de resultados; replay não conta como chance
+  mas ainda precisa ser jogado; "Chutar tudo" resolve em lote só nos dados,
+  sem re-animar a engine por item.
 
 ## Pendências conhecidas
 
-1. **Task 16 do plano `motor-3d-threejs.md`** (remover `app/game/engine.ts`,
+1. **Integrar `jogador_final.glb`** (modelo real do batedor com idle/chute,
+   adicionado pelo usuário na raiz do repo, ainda não commitado nem
+   referenciado em nenhum código) — próximo passo natural, mesmo padrão já
+   usado para o goleiro (`gltf-transform` para comprimir, loader dedicado,
+   substituir o `createCharacter('kicker')` procedural). Não decidido ainda
+   quando fazer isso.
+2. **Task 16 do plano `motor-3d-threejs.md`** (remover `app/game/engine.ts`,
    o motor 2D antigo) — ainda não foi feita. O arquivo continua no repo, sem
    uso. Fazer só depois de ter certeza que o motor 3D está estável.
-2. **Revisão final de branch** (whole-diff review) do plano `motor-3d-threejs.md`
+3. **Revisão final de branch** (whole-diff review) do plano `motor-3d-threejs.md`
    (rodada 1) antes de considerar a migração 100% fechada — ainda não rodada.
-   (A revisão final da rodada 4 — mira automática — já rodou e foi aprovada,
-   ver secção "Feito nesta rodada".)
-3. **Limpeza de histórico do git**: dois arquivos binários grandes foram
+   (As revisões finais das rodadas 4 e 5 já rodaram e foram aprovadas.)
+4. **Limpeza de histórico do git**: dois arquivos binários grandes foram
    commitados sem querer direto no histórico (fora do fluxo normal, via
    commits manuais do usuário) e já foram enviados ao GitHub:
    - Um `.glb` de ~10.6MB (commit `c068e7d`)
@@ -121,45 +166,49 @@ que pode haver outra sessão mexendo nos mesmos arquivos ao mesmo tempo.
    histórico. Limpeza (`git filter-repo`/BFG + `push --force`) foi
    **adiada deliberadamente pelo usuário** — não fazer sem confirmar de
    novo, já que exige force-push.
-4. **Modais/mocks de "Roleta"** (`app/components/Modais/*`,
-   `app/mocks/*`) — arquivos de outro projeto da empresa (jogo de
-   raspadinha/roleta, "Baú do Milhão"), com imports quebrados
-   (`@/types/Roleta`, `@/stores/roletaTestMode` não existem aqui, projeto
-   não tem Pinia). O usuário pediu para usar **só como referência
-   visual/estrutural** para os modais de prêmio do jogo de pênalti, e depois
-   apagar — isso ficou pendente, nunca foi retomado depois que o foco virou
-   o motor 3D. Os modais de vitória/derrota atuais continuam embutidos
-   direto em `PenaltyGame.client.vue` (funcionam, mas não usam o estilo dos
-   arquivos de Roleta).
-5. **Convenção de commit**: este repo não tem `ssh-agent` rodando para a
+5. **Arquivos soltos de "Roleta" ainda sem uso**: `app/components/Modais/ModalBase.vue`,
+   `ModalGanhou.vue`, `ModalReplay.vue`, `ModalResumo.vue`,
+   `ModalRasparTodas.vue`, `ModalPerdeuTodos.vue`, `ModalErro.vue`,
+   `ModalFecharRaspadinha.vue` e `app/mocks/index.ts` vieram de um commit
+   manual anterior do usuário (`19dbb8f`) como referência da Roleta, têm
+   imports quebrados (`@/types/Roleta`, Pinia) e **não são usados por
+   nenhum código** — `PenaltyGame.client.vue` importa só os 5 modais novos
+   de `app/components/Modais/` (`ModalGol`/`ModalDefendeu`/`ModalChuteExtra`/
+   `ModalChutarTudoConfirm`/`ModalResumoChutarTudo`, ver rodada 5). Seguro
+   apagar quando alguém tiver um momento, mas não bloqueia nada.
+6. **Convenção de commit**: este repo não tem `ssh-agent` rodando para a
    chave SSH configurada como `gpg.format=ssh` — todo commit precisa de
    `git commit --no-gpg-sign` (autorizado explicitamente pelo usuário). Não
    tentar reabilitar assinatura nem usar `git commit` puro sem confirmar
    antes.
-6. Sem `vue-tsc`/lint configurado no projeto — cada implementador tipa
+7. Sem `vue-tsc`/lint configurado no projeto — cada implementador tipa
    manualmente sem `any` implícito; não há checagem automática de tipos no
    CI/build local além dos testes Vitest (`npm run test:unit`, cobre só a
-   lógica pura: `worldGeometry`, `goalkeeperAI`, `ballFlight`, `netRipple`).
-7. **Cosmético, achado na revisão da Task 5 de `ambientacao-premio.md`**:
+   lógica pura: `worldGeometry`, `goalkeeperAI`, `ballFlight`, `netRipple`,
+   `session`, `useGameApi`, `penaltySequences`).
+8. **Cosmético, achado na revisão da Task 5 de `ambientacao-premio.md`**:
    `fieldAtmosphere.ts` tem uma função `respawnParticle` morta (nunca
    chamada — a lógica equivalente está duplicada inline dentro de
    `buildParticles`'s `update()`), com um cast `as unknown as {...}`
    type-unsafe. Não afeta o funcionamento, só limpeza pendente.
+9. **Real API ainda não existe** — `USE_MOCK = true` em `useGameApi.ts`.
+   Trocar por uma API real exige revisar o contrato descrito no topo do
+   arquivo (`GET /games`, `GET /games/{id}/play-sequence?count=N`).
 
 ## Se for continuar
 
 - Os planos (`motor-3d-threejs.md`, `ambientacao-premio.md`,
-  `mira-automatica-resultado-api.md`) têm o checklist de tasks marcado — dá
-  pra ver rapidamente o que falta em cada um.
-- Antes de mexer em `app/game/engine3d/*`, rode `git status` e `git log
-  --oneline -10` para confirmar que não há outra sessão com mudanças não
-  commitadas no meio do caminho (ver aviso acima sobre sessões paralelas).
+  `mira-automatica-resultado-api.md`, `jogo-profissionalizado.md`) têm o
+  checklist de tasks marcado — dá pra ver rapidamente o que falta em cada um.
+- Antes de mexer em `app/game/engine3d/*` ou `PenaltyGame.client.vue`, rode
+  `git status` — o usuário às vezes edita esses arquivos diretamente no
+  editor dele enquanto uma sessão está rodando testes automatizados, o que
+  pode parecer um bug transitório (HMR falhando, estado preso) sem ser um.
 - O ledger de execução (subagent-driven-development) está em
-  `.superpowers/sdd/progress.md` (gitignored, local apenas) — tem o histórico
-  completo da rodada 1 e da rodada 4 (mira automática); a rodada 2
-  (ambientação) foi tocada por outra sessão sem esse ledger.
-- Próximos passos sugeridos, nenhum decidido ainda: (a) trocar `USE_MOCK`
-  por uma API real em `useGameApi.ts` (exige antes o `try/catch` no
-  `PenaltyGame.client.vue` citado na secção "Feito nesta rodada"); (b) Task
-  16 de `motor-3d-threejs.md` (remover o motor 2D morto); (c) retomar os
-  modais de Roleta como referência visual (pendência 4 abaixo).
+  `.superpowers/sdd/progress.md` (gitignored, local apenas) — tem o
+  histórico completo das rodadas 1, 4 e 5; a rodada 2 (ambientação) foi
+  tocada por outra sessão sem esse ledger.
+- Próximos passos sugeridos, nenhum decidido ainda: (a) integrar
+  `jogador_final.glb` (pendência 1); (b) trocar `USE_MOCK` por uma API real;
+  (c) Task 16 de `motor-3d-threejs.md` (remover o motor 2D morto); (d)
+  apagar os arquivos soltos de Roleta sem uso (pendência 5).
