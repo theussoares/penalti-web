@@ -88,6 +88,12 @@ function buildCrowdCanvas(variant: number): HTMLCanvasElement {
     }
   }
 
+  // Divisao entre aneis da arquibancada (passarela escura no meio), como
+  // nos estadios da arte 2D de referencia.
+  const walkwayY = CANVAS_H * 0.46
+  ctx.fillStyle = '#0d1120'
+  ctx.fillRect(0, walkwayY, CANVAS_W, CANVAS_H * 0.045)
+
   // Veu escuro por cima: arquibancada a meia-luz, como na arte 2D — a
   // torcida ambienta sem competir com o gol e os jogadores.
   ctx.fillStyle = 'rgba(10, 14, 26, 0.3)'

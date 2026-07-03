@@ -14,7 +14,9 @@ import { buildBallMesh } from './ballMesh'
 import { arcHeight, ballFlightPosition } from './ballFlight'
 import { buildAdBoards } from './adBoardMesh'
 import { buildAimReticle, type AimReticle } from './aimReticle'
+import { buildBlobShadow } from './blobShadow'
 import { buildCameraRig, type CameraRig } from './cameraRig'
+import { buildStadiumLights } from './stadiumLights'
 import { buildCrowdBillboard, type CrowdBillboard } from './crowdBillboard'
 import { buildGoalFrame } from './goalFrameMesh'
 import { buildGroundMesh } from './groundMesh'
@@ -63,6 +65,8 @@ export class PenaltyEngine3D {
   private netMesh: NetMesh
   private crowd: CrowdBillboard
   private aimReticle: AimReticle
+  private ballShadow: Mesh
+  private kickerShadow: Mesh
   private kicker: Character
   private keeper: Character
   private keeperDiveModel: KeeperDiveModel | null = null
@@ -87,11 +91,13 @@ export class PenaltyEngine3D {
 
     this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'low-power' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
+    // Azul-noite de estadio em vez de preto puro.
+    this.renderer.setClearColor(0x050a14, 1)
     // shadowMap.enabled fica false (padrao) de proposito: sem sombras dinamicas no v1.
 
     this.cameraRig = buildCameraRig()
 
-    this.scene.fog = new Fog(0x000000, 15, 40)
+    this.scene.fog = new Fog(0x050a14, 15, 40)
 
     this.scene.add(new AmbientLight(0xffffff, 0.7))
     const sun = new DirectionalLight(0xfff2d0, 0.8)
@@ -118,9 +124,21 @@ export class PenaltyEngine3D {
     // Torcida como faixa de arquibancada acima das placas, atras do gol —
     // nao mais um telao preenchendo a tela inteira. Acima dela sobra o ceu
     // escuro do estadio.
+    const crowdZ = this.layout.goalLineZ - this.layout.goalDepth - 1.6
     this.crowd = buildCrowdBillboard(sceneryWidth, 5.5)
-    this.crowd.mesh.position.set(0, 1.0 + 2.75, this.layout.goalLineZ - this.layout.goalDepth - 1.6)
+    this.crowd.mesh.position.set(0, 1.0 + 2.75, crowdZ)
     this.scene.add(this.crowd.mesh)
+
+    this.scene.add(buildStadiumLights(sceneryWidth, 1.0 + 5.5 + 0.2, crowdZ + 0.05))
+
+    // Sombras falsas coladas no gramado (sem sombra dinamica no v1).
+    this.ballShadow = buildBlobShadow(this.layout.ballRadius * 2.2)
+    this.scene.add(this.ballShadow)
+    this.kickerShadow = buildBlobShadow(0.5)
+    this.scene.add(this.kickerShadow)
+    const keeperShadow = buildBlobShadow(0.55)
+    keeperShadow.position.set(0, 0.01, this.layout.goalLineZ - 0.1)
+    this.scene.add(keeperShadow)
 
     this.kicker = createCharacter('kicker')
     this.kicker.object3D.position.set(this.kickerStartPos.x, 0, this.kickerStartPos.z)
@@ -313,6 +331,14 @@ export class PenaltyEngine3D {
     this.crowd.setExcitement(this.outcome === 'goal' && this.state !== 'ready' ? 1 : 0, now)
     this.netMesh.update(this.ripples, now)
     this.ballMesh.position.set(this.ballPos.x, this.ballPos.y, this.ballPos.z)
+
+    // Sombras seguem bola (encolhendo com a altura) e batedor.
+    this.ballShadow.position.x = this.ballPos.x
+    this.ballShadow.position.z = this.ballPos.z
+    const shadowScale = 1 / (1 + this.ballPos.y * 0.7)
+    this.ballShadow.scale.setScalar(shadowScale)
+    this.kickerShadow.position.x = this.kicker.object3D.position.x
+    this.kickerShadow.position.z = this.kicker.object3D.position.z
     this.cameraRig.update(this.state, t, this.ballPos)
   }
 
