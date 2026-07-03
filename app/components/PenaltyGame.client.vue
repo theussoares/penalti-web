@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
     <canvas ref="canvasRef" class="game-canvas" />
 
     <!-- Confete continuo, sutil, por cima da foto de fundo -->
-    <div class="confetti-layer" aria-hidden="true">
+    <!-- <div class="confetti-layer" aria-hidden="true">
       <span
         v-for="(piece, i) in confettiPieces"
         :key="i"
@@ -162,13 +162,11 @@ onBeforeUnmount(() => {
           backgroundColor: piece.color
         }"
       />
-    </div>
+    </div> -->
 
     <!-- Telao central: usa o quadro ja pintado na foto de fundo -->
     <div class="jumbotron" aria-hidden="true">
-      <span class="jumbotron-label">{{ game?.name ?? 'Penalti Premiado' }}</span>
-      <strong class="jumbotron-value">BOA SORTE!</strong>
-      <span class="jumbotron-tag">★ ★ ★ ★ ★</span>
+      <img class="jumbotron-logo" src="/images/penalti-premiado-logo.png" alt="" />
     </div>
 
     <!-- HUD -->
@@ -332,37 +330,19 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 50%;
   top: 27.6%;
-  width: 34%;
+  width: 30%;
   height: 8%;
   transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: space-evenly;
-  text-align: center;
+  justify-content: center;
 }
 
-.jumbotron-label {
-  font-size: clamp(6px, 1.4vw, 10px);
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.jumbotron-value {
-  font-size: clamp(12px, 3.4vw, 22px);
-  font-weight: 900;
-  letter-spacing: 0.03em;
-  color: #8dff5a;
-  text-shadow: 0 0 10px rgba(141, 255, 90, 0.75), 0 0 24px rgba(141, 255, 90, 0.45);
-  animation: value-glow 2.2s ease-in-out infinite;
-}
-
-.jumbotron-tag {
-  font-size: clamp(6px, 1.3vw, 10px);
-  letter-spacing: 0.2em;
-  color: #ffd23f;
+.jumbotron-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px rgba(255, 210, 63, 0.35));
 }
 
 /* ------------------------------ HUD ------------------------------ */
