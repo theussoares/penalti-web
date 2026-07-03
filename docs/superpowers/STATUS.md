@@ -1,25 +1,40 @@
 # Status do projeto — Penalti Premiado 3D
 
 > Nota de retomada. Última atualização: 2026-07-03 (sessão longa: motor 3D +
-> ambientação + fundo de imagem). Se você é uma sessão nova pegando este
-> projeto, leia isto primeiro, depois os planos/specs referenciados abaixo.
+> ambientação + fundo de imagem + mira automática). Se você é uma sessão nova
+> pegando este projeto, leia isto primeiro, depois os planos/specs
+> referenciados abaixo.
 
-## Próxima tarefa (spec aprovada, plano ainda não escrito)
+## Feito nesta rodada: mira automática + resultado pré-definido pela API
 
 **`docs/superpowers/specs/2026-07-03-mira-automatica-resultado-api-design.md`**
-— mudança de mecânica aprovada pelo usuário, mas a implementação **ainda não
-começou** (nem o plano de implementação foi escrito). Resumo: a mira deixa de
-ser por toque/arraste e passa a ser automática (vaivém esquerda↔direita,
-altura fixa do goleiro) com um botão "Chutar"; o resultado (gol/defesa +
-prêmio) passa a vir de uma sequência pré-buscada da API no primeiro chute
-(reaproveitando o vocabulário `tipo_acao`/`tipo_premio`/`chave_giro` dos
-mocks de Roleta), e o goleiro só "encena" esse resultado já definido —
-mergulha exato se for defesa, longe se for gol. Isso **remove** o desfecho
-"pra fora" e simplifica bastante o motor (`aimInput.ts`/raycasting de mira
-sai, `goalkeeperAI.ts` muda de "calcula resultado" para "calcula onde o
-goleiro mergulha dado o resultado"). Próximo passo: rodar
-`superpowers:writing-plans` a partir dessa spec, depois executar (o padrão
-usado nas rodadas anteriores foi `subagent-driven-development`).
+(spec) + **`docs/superpowers/plans/2026-07-03-mira-automatica-resultado-api.md`**
+(plano, 5 tasks, executado via `subagent-driven-development`, todas as
+tasks + revisão final de branch aprovadas sem Critical/Important) —
+a mira deixou de ser por toque/arraste e passou a ser automática (vaivém
+esquerda↔direita, altura fixa do goleiro, `WorldLayout.keeperHeight`) com um
+botão "Chutar"; o resultado (gol/defesa + prêmio) vem de uma sequência
+pré-buscada da API no primeiro chute (`fetchPlaySequence`, reaproveitando o
+vocabulário `tipo_acao`/`tipo_premio`/`chave_giro` dos mocks de Roleta), e o
+goleiro só "encena" esse resultado já definido — mergulha exato se for
+defesa, longe se for gol (`computeDiveTarget`). O desfecho "pra fora" foi
+removido (`ShotOutcome` agora é só `'goal' | 'save'`).
+
+Saíram do código (motor 3D e UI, não o motor 2D morto — ver "Decisões
+importantes" abaixo): `aimInput.ts` (raycasting de mira por toque),
+`decideShot`/`ShotDecision` (`goalkeeperAI.ts`), `submitPlay`/`mockPrize`/
+`Prize`/`PrizeType`/`formatMoney` (`useGameApi.ts`), os handlers
+`onPointerDown/Move/Up` e o modal de "Pra fora!" (`PenaltyGame.client.vue`).
+
+Pendências abertas desta rodada (Minor, não bloqueantes, registradas na
+revisão final):
+- `maybeRefill`/`nextPlayResult` (`PenaltyGame.client.vue`) não têm
+  `.catch` — inofensivo com `USE_MOCK = true` (a promise nunca rejeita),
+  mas travaria o botão "Chutar" permanentemente se a API real falhar.
+  Adicionar `try/catch` antes de trocar `USE_MOCK` para `false`.
+- `MOCK_GAMES.headline` em `useGameApi.ts` ainda menciona "números da
+  sorte", mas esse tipo de prêmio não existe mais na sequência (só
+  `valor`/`cota`) — copy desatualizada, cosmético.
 
 ## Onde as coisas estão
 
@@ -28,7 +43,7 @@ mas não é mais usado) para Three.js/WebGL (`app/game/engine3d/`), orquestrado
 por `PenaltyEngine3D` (`app/game/engine3d/penaltyEngine3d.ts`), já ligado em
 `app/components/PenaltyGame.client.vue`.
 
-Três rodadas de trabalho até agora:
+Quatro rodadas de trabalho até agora:
 
 1. **`docs/superpowers/specs/2026-07-03-motor-3d-threejs-design.md`** (spec) +
    **`docs/superpowers/plans/2026-07-03-motor-3d-threejs.md`** (plano, 16
@@ -47,6 +62,11 @@ Três rodadas de trabalho até agora:
    3D transparente por cima mostrando só gol/bola/personagens/sombras). Feito
    direto (sem SDD formal) por já estar em modo de iteração visual rápida com
    o usuário. Commit `4c83f05`.
+4. **`docs/superpowers/specs/2026-07-03-mira-automatica-resultado-api-design.md`**
+   (spec) + **`docs/superpowers/plans/2026-07-03-mira-automatica-resultado-api.md`**
+   (plano, 5 tasks) — mira automática + resultado pré-definido pela API (ver
+   secção "Feito nesta rodada" acima). Executado via `subagent-driven-development`
+   nesta mesma sessão, todas as tasks e a revisão final de branch aprovadas.
 
 **As rodadas 1 e 2 foram executadas por duas sessões de Claude Code rodando
 em paralelo no mesmo repositório**, sem coordenação direta entre si — o que
@@ -87,8 +107,10 @@ que pode haver outra sessão mexendo nos mesmos arquivos ao mesmo tempo.
 1. **Task 16 do plano `motor-3d-threejs.md`** (remover `app/game/engine.ts`,
    o motor 2D antigo) — ainda não foi feita. O arquivo continua no repo, sem
    uso. Fazer só depois de ter certeza que o motor 3D está estável.
-2. **Revisão final de branch** (whole-diff review) de tudo isso antes de
-   considerar a migração 100% fechada — ainda não rodada.
+2. **Revisão final de branch** (whole-diff review) do plano `motor-3d-threejs.md`
+   (rodada 1) antes de considerar a migração 100% fechada — ainda não rodada.
+   (A revisão final da rodada 4 — mira automática — já rodou e foi aprovada,
+   ver secção "Feito nesta rodada".)
 3. **Limpeza de histórico do git**: dois arquivos binários grandes foram
    commitados sem querer direto no histórico (fora do fluxo normal, via
    commits manuais do usuário) e já foram enviados ao GitHub:
@@ -126,13 +148,18 @@ que pode haver outra sessão mexendo nos mesmos arquivos ao mesmo tempo.
 
 ## Se for continuar
 
-- Ambos os planos (`motor-3d-threejs.md`, `ambientacao-premio.md`) têm o
-  checklist de tasks marcado — dá pra ver rapidamente o que falta em cada
-  um.
+- Os planos (`motor-3d-threejs.md`, `ambientacao-premio.md`,
+  `mira-automatica-resultado-api.md`) têm o checklist de tasks marcado — dá
+  pra ver rapidamente o que falta em cada um.
 - Antes de mexer em `app/game/engine3d/*`, rode `git status` e `git log
   --oneline -10` para confirmar que não há outra sessão com mudanças não
   commitadas no meio do caminho (ver aviso acima sobre sessões paralelas).
-- O ledger de execução da primeira rodada (subagent-driven-development) está
-  em `.superpowers/sdd/progress.md` (gitignored, local apenas) — não conta
-  com histórico da segunda rodada (ambientação), que foi tocada por outra
-  sessão sem esse ledger.
+- O ledger de execução (subagent-driven-development) está em
+  `.superpowers/sdd/progress.md` (gitignored, local apenas) — tem o histórico
+  completo da rodada 1 e da rodada 4 (mira automática); a rodada 2
+  (ambientação) foi tocada por outra sessão sem esse ledger.
+- Próximos passos sugeridos, nenhum decidido ainda: (a) trocar `USE_MOCK`
+  por uma API real em `useGameApi.ts` (exige antes o `try/catch` no
+  `PenaltyGame.client.vue` citado na secção "Feito nesta rodada"); (b) Task
+  16 de `motor-3d-threejs.md` (remover o motor 2D morto); (c) retomar os
+  modais de Roleta como referência visual (pendência 4 abaixo).
