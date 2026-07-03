@@ -1,66 +1,41 @@
-import type { ShotOutcome, Vec2 } from '../types'
+import type { Vec2 } from '../types'
 import type { WorldLayout } from './worldGeometry'
-
-export interface ShotDecision {
-  outcome: ShotOutcome
-  diveTarget: Vec2
-  diveDir: number
-}
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
 /**
- * Porte 1:1 da IA do goleiro do motor 2D (engine.ts `shoot()`), trocando
- * pixels de tela por coordenadas de mundo. Mesmas probabilidades:
- * 58% de chance de adivinhar a coluna certa, 62%/50% de acertar a fila.
+ * Fracao da altura do gol usada como "alcance" do goleiro a partir do
+ * ponto de mergulho — usada so pelos testes para confirmar que o mergulho
+ * de "goal" sempre fica fora de alcance. `computeDiveTarget` nunca calcula
+ * resultado a partir dela — so usa o lado oposto do gol, que ja garante
+ * distancia maior por construcao.
  */
-export function decideShot(
-  target: Vec2,
+export const KEEPER_REACH_FACTOR = 0.36
+
+/**
+ * O goleiro nao decide mais o resultado (isso vem pronto da API, ver
+ * `PenaltyPlayResult` em `useGameApi.ts`) — so calcula PARA ONDE ele
+ * mergulha dado um resultado ja definido. `outcome: 'save'` mergulha exato
+ * no alvo (defende sempre); `outcome: 'goal'` mergulha para o lado oposto
+ * do gol (erra sempre, distancia sempre maior que o alcance).
+ */
+export function computeDiveTarget(
+  outcome: 'goal' | 'save',
+  aimX: number,
   layout: WorldLayout,
   rng: () => number = Math.random
-): ShotDecision {
-  const { aimBounds, goalCenterX, goalHeight } = layout
+): Vec2 {
+  const { aimBounds, goalCenterX, keeperHeight } = layout
 
-  const inGoal =
-    target.x > aimBounds.minX && target.x < aimBounds.maxX &&
-    target.y > aimBounds.minY && target.y < aimBounds.maxY
+  if (outcome === 'save') {
+    return { x: aimX, y: keeperHeight }
+  }
 
-  const cols = [
-    lerp(aimBounds.minX, aimBounds.maxX, 0.16),
-    (aimBounds.minX + aimBounds.maxX) / 2,
-    lerp(aimBounds.minX, aimBounds.maxX, 0.84)
-  ]
+  const farX = aimX <= goalCenterX ? aimBounds.maxX : aimBounds.minX
   const rowsY = [
     lerp(aimBounds.minY, aimBounds.maxY, 0.68),
     lerp(aimBounds.minY, aimBounds.maxY, 0.18)
   ]
-
-  const targetCol = target.x < lerp(aimBounds.minX, aimBounds.maxX, 0.38)
-    ? 0
-    : target.x > lerp(aimBounds.minX, aimBounds.maxX, 0.62)
-      ? 2
-      : 1
-  const targetRow = target.y > lerp(aimBounds.minY, aimBounds.maxY, 0.5) ? 0 : 1
-
-  let col: number
-  const guessRight = rng() < 0.58
-  if (guessRight) {
-    col = targetCol
-  } else {
-    const others = [0, 1, 2].filter((c) => c !== targetCol)
-    col = others[Math.floor(rng() * others.length)]!
-  }
-  const row = rng() < (col === targetCol ? 0.62 : 0.5) ? targetRow : 1 - targetRow
-
-  const diveTarget: Vec2 = { x: cols[col]!, y: rowsY[row]! }
-  const diveDir = Math.sign(diveTarget.x - goalCenterX) || 0
-
-  if (!inGoal) {
-    return { outcome: 'out', diveTarget, diveDir }
-  }
-
-  const reach = goalHeight * 0.36
-  const dist = Math.hypot(diveTarget.x - target.x, diveTarget.y - target.y)
-  const outcome: ShotOutcome = dist < reach ? 'save' : 'goal'
-  return { outcome, diveTarget, diveDir }
+  const y = rng() < 0.5 ? rowsY[0]! : rowsY[1]!
+  return { x: farX, y }
 }
