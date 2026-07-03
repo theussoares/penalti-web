@@ -231,8 +231,8 @@ export class PenaltyEngine {
       postW: Math.max(3, goalW * 0.016),
       ballR: clamp(goalW * 0.05, 9, 22),
       spot: { x: W / 2, y: H * 0.795 },
-      keeperH: goalH * 0.64,
-      kickerH: H * 0.21
+      keeperH: goalH * 0.66,
+      kickerH: H * 0.23
     }
     this.layout = layout
     this.ballPos = { ...layout.spot }
@@ -337,50 +337,34 @@ export class PenaltyEngine {
 
     // Gramado com perspectiva
     const grass = ctx.createLinearGradient(0, boardBottom, 0, H)
-    grass.addColorStop(0, '#2c7a3f')
-    grass.addColorStop(0.45, '#2f8a45')
-    grass.addColorStop(1, '#25913f')
+    grass.addColorStop(0, '#26703a')
+    grass.addColorStop(0.4, '#2f8a45')
+    grass.addColorStop(0.8, '#2c9146')
+    grass.addColorStop(1, '#26953f')
     ctx.fillStyle = grass
     ctx.fillRect(0, boardBottom, W, H - boardBottom)
 
-    // Faixas do corte de grama (largura cresce com a proximidade)
-    ctx.fillStyle = 'rgba(255,255,255,0.05)'
+    // Faixas do corte de grama com borda suave (largura cresce com a proximidade)
     let y = boardBottom
     let bandH = H * 0.018
     let i = 0
     while (y < H) {
-      if (i % 2 === 0) ctx.fillRect(0, y, W, bandH)
+      const band = ctx.createLinearGradient(0, y, 0, y + bandH)
+      if (i % 2 === 0) {
+        band.addColorStop(0, 'rgba(255,255,240,0.085)')
+        band.addColorStop(0.75, 'rgba(255,255,240,0.045)')
+        band.addColorStop(1, 'rgba(255,255,240,0.01)')
+      } else {
+        band.addColorStop(0, 'rgba(4,44,18,0.09)')
+        band.addColorStop(0.7, 'rgba(4,44,18,0.04)')
+        band.addColorStop(1, 'rgba(4,44,18,0.01)')
+      }
+      ctx.fillStyle = band
+      ctx.fillRect(0, y, W, bandH)
       y += bandH
       bandH *= 1.32
       i++
     }
-
-    // Textura do gramado: pontinhos irregulares
-    let grng = 98765
-    const grand = () => {
-      grng = (grng * 1103515245 + 12345) & 0x7fffffff
-      return grng / 0x7fffffff
-    }
-    for (let k = 0; k < 500; k++) {
-      const gy = lerp(boardBottom + 4, H, easeInQuad(grand()))
-      const gx = grand() * W
-      const gsize = lerp(0.6, 2.2, (gy - boardBottom) / (H - boardBottom))
-      ctx.fillStyle = grand() > 0.5 ? 'rgba(10,60,25,0.16)' : 'rgba(210,255,210,0.08)'
-      ctx.fillRect(gx, gy, gsize, gsize * 0.6)
-    }
-
-    // Area gasta ao redor da marca do penalti
-    const worn = ctx.createRadialGradient(
-      this.layout.spot.x, this.layout.spot.y, 0,
-      this.layout.spot.x, this.layout.spot.y, this.layout.ballR * 5
-    )
-    worn.addColorStop(0, 'rgba(122,90,40,0.28)')
-    worn.addColorStop(0.6, 'rgba(122,90,40,0.1)')
-    worn.addColorStop(1, 'rgba(122,90,40,0)')
-    ctx.fillStyle = worn
-    ctx.beginPath()
-    ctx.ellipse(this.layout.spot.x, this.layout.spot.y, this.layout.ballR * 5, this.layout.ballR * 2.2, 0, 0, TAU)
-    ctx.fill()
 
     // Luz do refletor sobre o campo
     const fieldGlow = ctx.createRadialGradient(
@@ -431,11 +415,116 @@ export class PenaltyEngine {
     ctx.ellipse(W / 2, bigArea[1]!.y, goalW * 0.42, H * 0.05, 0, 0.15, Math.PI - 0.15)
     ctx.stroke()
 
+    // Segundo padrao de corte: colunas verticais convergindo em perspectiva
+    for (let c = -5; c < 5; c++) {
+      if ((c + 10) % 2 === 0) continue
+      const a = persp(c / 5, 0)
+      const b = persp((c + 1) / 5, 0)
+      const a1 = persp(c / 5, 1)
+      const b1 = persp((c + 1) / 5, 1)
+      ctx.fillStyle = 'rgba(255,255,240,0.022)'
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
+      ctx.lineTo(b.x, b.y)
+      ctx.lineTo(b1.x, b1.y)
+      ctx.lineTo(a1.x, a1.y)
+      ctx.closePath()
+      ctx.fill()
+    }
+
     // Marca do penalti
     ctx.fillStyle = 'rgba(255,255,255,0.9)'
     ctx.beginPath()
     ctx.ellipse(this.layout.spot.x, this.layout.spot.y, this.layout.ballR * 0.55, this.layout.ballR * 0.22, 0, 0, TAU)
     ctx.fill()
+
+    // ---- Texturizacao do gramado (por cima das linhas, para dar desgaste) ----
+    let grng = 98765
+    const grand = () => {
+      grng = (grng * 1103515245 + 12345) & 0x7fffffff
+      return grng / 0x7fffffff
+    }
+
+    // Boca do gol gasta (faixa de terra na linha do gol)
+    const mouth = ctx.createRadialGradient(goalCx, goalLineY + H * 0.006, 0, goalCx, goalLineY + H * 0.006, goalW * 0.55)
+    mouth.addColorStop(0, 'rgba(115,86,42,0.22)')
+    mouth.addColorStop(0.55, 'rgba(115,86,42,0.1)')
+    mouth.addColorStop(1, 'rgba(115,86,42,0)')
+    ctx.fillStyle = mouth
+    ctx.beginPath()
+    ctx.ellipse(goalCx, goalLineY + H * 0.006, goalW * 0.55, H * 0.022, 0, 0, TAU)
+    ctx.fill()
+
+    // Area gasta ao redor da marca do penalti
+    const worn = ctx.createRadialGradient(
+      this.layout.spot.x, this.layout.spot.y, 0,
+      this.layout.spot.x, this.layout.spot.y, this.layout.ballR * 5.5
+    )
+    worn.addColorStop(0, 'rgba(115,86,42,0.3)')
+    worn.addColorStop(0.55, 'rgba(115,86,42,0.12)')
+    worn.addColorStop(1, 'rgba(115,86,42,0)')
+    ctx.fillStyle = worn
+    ctx.beginPath()
+    ctx.ellipse(this.layout.spot.x, this.layout.spot.y, this.layout.ballR * 5.5, this.layout.ballR * 2.4, 0, 0, TAU)
+    ctx.fill()
+
+    // Manchas irregulares de desgaste espalhadas
+    for (let k = 0; k < 14; k++) {
+      const px = grand() * W
+      const py = lerp(boardBottom + H * 0.03, H, easeInQuad(grand()))
+      const depth = (py - boardBottom) / (H - boardBottom)
+      const pr = lerp(H * 0.006, H * 0.03, depth) * (0.5 + grand())
+      const blob = ctx.createRadialGradient(px, py, 0, px, py, pr)
+      const tone = grand() > 0.5 ? '104,120,44' : '112,88,46'
+      blob.addColorStop(0, `rgba(${tone},${0.05 + grand() * 0.06})`)
+      blob.addColorStop(1, `rgba(${tone},0)`)
+      ctx.fillStyle = blob
+      ctx.beginPath()
+      ctx.ellipse(px, py, pr, pr * 0.45, grand() * Math.PI, 0, TAU)
+      ctx.fill()
+    }
+
+    // Fios de grama individuais (densidade cresce com a proximidade)
+    const bladeCount = Math.min(4200, Math.round((W * (H - boardBottom)) / 320))
+    ctx.lineCap = 'round'
+    for (let k = 0; k < bladeCount; k++) {
+      const gy = lerp(boardBottom + 2, H, easeInQuad(grand()))
+      const gx = grand() * W
+      const depth = (gy - boardBottom) / (H - boardBottom)
+      const len = lerp(1.4, 6.5, depth) * (0.65 + grand() * 0.7)
+      const leanAmt = (grand() - 0.5) * len * 0.5
+      const light = grand() > 0.52
+      ctx.strokeStyle = light
+        ? `rgba(196,255,196,${0.05 + 0.07 * depth})`
+        : `rgba(6,48,20,${0.06 + 0.08 * depth})`
+      ctx.lineWidth = depth > 0.55 ? 1.25 : 0.8
+      ctx.beginPath()
+      ctx.moveTo(gx, gy)
+      ctx.lineTo(gx + leanAmt, gy - len)
+      ctx.stroke()
+    }
+
+    // Granulado fino por cima de todo o campo
+    const grain = document.createElement('canvas')
+    grain.width = 96
+    grain.height = 96
+    const gctx = grain.getContext('2d')!
+    const img = gctx.createImageData(96, 96)
+    for (let p = 0; p < img.data.length; p += 4) {
+      const v = Math.floor(grand() * 255)
+      img.data[p] = v
+      img.data[p + 1] = v
+      img.data[p + 2] = v
+      img.data[p + 3] = 14
+    }
+    gctx.putImageData(img, 0, 0)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(0, boardBottom, W, H - boardBottom)
+    ctx.clip()
+    ctx.fillStyle = ctx.createPattern(grain, 'repeat')!
+    ctx.fillRect(0, boardBottom, W, H - boardBottom)
+    ctx.restore()
 
     this.staticLayer = layer
   }
@@ -995,6 +1084,30 @@ export class PenaltyEngine {
     ctx.stroke()
   }
 
+  // Capsula com sombreamento cilindrico (claro -> base -> escuro no eixo perpendicular)
+  private limbShaded(
+    ctx: CanvasRenderingContext2D,
+    x1: number, y1: number, x2: number, y2: number,
+    w: number, hi: string, base: string, sh: string
+  ) {
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const len = Math.hypot(dx, dy) || 1
+    const nx = (-dy / len) * (w / 2)
+    const ny = (dx / len) * (w / 2)
+    const g = ctx.createLinearGradient(x1 + nx, y1 + ny, x1 - nx, y1 - ny)
+    g.addColorStop(0, hi)
+    g.addColorStop(0.5, base)
+    g.addColorStop(1, sh)
+    ctx.strokeStyle = g
+    ctx.lineWidth = w
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x2, y2)
+    ctx.stroke()
+  }
+
   private drawKeeper(ctx: CanvasRenderingContext2D) {
     const L = this.layout
     const h = L.keeperH
@@ -1043,79 +1156,160 @@ export class PenaltyEngine {
     ctx.restore()
   }
 
-  /** Goleiro todo de preto com luvas verdes. mode 0 = idle, 1 = mergulho. */
+  /** Goleiro de preto com paineis, frisos neon e luvas verdes com dedos. mode 0 = idle, 1 = mergulho. */
   private drawKeeperFigure(ctx: CanvasRenderingContext2D, u: number, mode: number, diveP: number) {
-    const kit = '#15151a'
-    const kitShade = '#26262e'
-    const gloves = '#8dff5a'
+    const kit = '#17181d'
+    const kitHi = '#2e3039'
+    const kitSh = '#0c0d11'
+    const panel = '#22242c'
+    const neon = '#8dff5a'
+    const accent = '#3d7a22'
+    const gloveSh = '#5ec432'
     const skin = '#c98e63'
+    const skinSh = '#a06f48'
+    const hairColor = '#1c1108'
+
+    // Luva com palma e dedos abertos apontando para "ang"
+    const glove = (x: number, y: number, s: number, ang: number) => {
+      ctx.fillStyle = gloveSh
+      ctx.beginPath()
+      ctx.arc(x, y, s, 0, TAU)
+      ctx.fill()
+      ctx.fillStyle = neon
+      ctx.beginPath()
+      ctx.arc(x - s * 0.12, y - s * 0.12, s * 0.82, 0, TAU)
+      ctx.fill()
+      for (let f = -1.5; f <= 1.5; f++) {
+        const fa = ang + f * 0.42
+        ctx.fillStyle = neon
+        ctx.beginPath()
+        ctx.arc(x + Math.cos(fa) * s * 1.05, y + Math.sin(fa) * s * 1.05, s * 0.3, 0, TAU)
+        ctx.fill()
+      }
+    }
+
+    // Cabeca com sombreamento e cabelo curto
+    const head = (x: number, y: number, r: number) => {
+      ctx.fillStyle = skinSh
+      ctx.beginPath()
+      ctx.arc(x, y, r, 0, TAU)
+      ctx.fill()
+      ctx.fillStyle = skin
+      ctx.beginPath()
+      ctx.arc(x - r * 0.12, y - r * 0.1, r * 0.9, 0, TAU)
+      ctx.fill()
+      ctx.fillStyle = hairColor
+      ctx.beginPath()
+      ctx.arc(x, y - r * 0.28, r * 0.94, Math.PI * 0.95, TAU * 1.025)
+      ctx.fill()
+    }
 
     if (mode === 0) {
       const armDrop = Math.sin(this.now * 2.1) * u * 0.12
-      // pernas flexionadas
-      this.limb(ctx, -u * 0.7, u * 1.6, -u * 1.05, u * 3.3, u * 0.62, kit)
-      this.limb(ctx, u * 0.7, u * 1.6, u * 1.05, u * 3.3, u * 0.62, kit)
-      // chuteiras
-      this.limb(ctx, -u * 1.05, u * 3.35, -u * 1.35, u * 3.4, u * 0.4, '#0a0a0d')
-      this.limb(ctx, u * 1.05, u * 3.35, u * 1.35, u * 3.4, u * 0.4, '#0a0a0d')
-      // tronco
-      ctx.fillStyle = kit
+
+      // Pernas flexionadas em dois segmentos (coxa + canela) com meiao
+      const leg = (side: number) => {
+        const hip: Vec = { x: side * u * 0.55, y: u * 1.55 }
+        const knee: Vec = { x: side * u * 1.0, y: u * 2.45 }
+        const ankle: Vec = { x: side * u * 1.08, y: u * 3.32 }
+        this.limbShaded(ctx, hip.x, hip.y, knee.x, knee.y, u * 0.64, kitHi, kit, kitSh)
+        this.limbShaded(ctx, knee.x, knee.y, ankle.x, ankle.y, u * 0.5, kitHi, kit, kitSh)
+        this.limb(ctx, knee.x, knee.y, lerp(knee.x, ankle.x, 0.12), lerp(knee.y, ankle.y, 0.12), u * 0.34, accent)
+        this.limbShaded(ctx, ankle.x, ankle.y, ankle.x + side * u * 0.42, ankle.y + u * 0.1, u * 0.4, '#3a4152', '#0a0a0d', '#050508')
+      }
+      leg(-1)
+      leg(1)
+
+      // Tronco com paineis e frisos neon
+      const torsoGrad = ctx.createLinearGradient(-u, 0, u, 0)
+      torsoGrad.addColorStop(0, kitHi)
+      torsoGrad.addColorStop(0.5, kit)
+      torsoGrad.addColorStop(1, kitSh)
+      ctx.fillStyle = torsoGrad
       ctx.beginPath()
       ctx.moveTo(-u * 1.05, -u * 1.4)
-      ctx.quadraticCurveTo(0, -u * 1.75, u * 1.05, -u * 1.4)
-      ctx.lineTo(u * 0.85, u * 1.7)
+      ctx.quadraticCurveTo(0, -u * 1.78, u * 1.05, -u * 1.4)
+      ctx.quadraticCurveTo(u * 1.12, u * 0.2, u * 0.85, u * 1.7)
       ctx.quadraticCurveTo(0, u * 2, -u * 0.85, u * 1.7)
+      ctx.quadraticCurveTo(-u * 1.12, u * 0.2, -u * 1.05, -u * 1.4)
       ctx.closePath()
       ctx.fill()
-      ctx.fillStyle = kitShade
-      ctx.fillRect(-u * 0.12, -u * 1.5, u * 0.24, u * 3)
-      // bracos prontos
-      this.limb(ctx, -u * 1.0, -u * 1.1, -u * 1.9, u * 0.5 + armDrop, u * 0.5, kit)
-      this.limb(ctx, u * 1.0, -u * 1.1, u * 1.9, u * 0.5 + armDrop, u * 0.5, kit)
-      // luvas
-      ctx.fillStyle = gloves
+      ctx.fillStyle = panel
+      ctx.fillRect(-u * 0.2, -u * 1.55, u * 0.4, u * 3.1)
+      ctx.strokeStyle = 'rgba(141,255,90,0.4)'
+      ctx.lineWidth = u * 0.05
       ctx.beginPath()
-      ctx.arc(-u * 1.9, u * 0.5 + armDrop, u * 0.36, 0, TAU)
-      ctx.arc(u * 1.9, u * 0.5 + armDrop, u * 0.36, 0, TAU)
-      ctx.fill()
-      // cabeca
-      ctx.fillStyle = skin
-      ctx.beginPath()
-      ctx.arc(0, -u * 2.2, u * 0.62, 0, TAU)
-      ctx.fill()
-      ctx.fillStyle = '#1c1108'
-      ctx.beginPath()
-      ctx.arc(0, -u * 2.42, u * 0.6, Math.PI, TAU)
-      ctx.fill()
+      ctx.moveTo(-u * 0.92, -u * 1.3)
+      ctx.quadraticCurveTo(-u * 1.0, u * 0.2, -u * 0.78, u * 1.62)
+      ctx.moveTo(u * 0.92, -u * 1.3)
+      ctx.quadraticCurveTo(u * 1.0, u * 0.2, u * 0.78, u * 1.62)
+      ctx.stroke()
+      // Numero 1 nas costas
+      ctx.font = `800 ${u * 0.9}px 'Segoe UI', sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillStyle = 'rgba(141,255,90,0.75)'
+      ctx.fillText('1', 0, -u * 0.45)
+
+      // Bracos prontos em dois segmentos com punho neon
+      const arm = (side: number) => {
+        const shoulder: Vec = { x: side * u * 0.98, y: -u * 1.12 }
+        const elbow: Vec = { x: side * u * 1.62, y: -u * 0.25 + armDrop * 0.5 }
+        const wrist: Vec = { x: side * u * 1.92, y: u * 0.5 + armDrop }
+        this.limbShaded(ctx, shoulder.x, shoulder.y, elbow.x, elbow.y, u * 0.5, kitHi, kit, kitSh)
+        this.limbShaded(ctx, elbow.x, elbow.y, wrist.x, wrist.y, u * 0.44, kitHi, kit, kitSh)
+        this.limb(ctx, lerp(elbow.x, wrist.x, 0.85), lerp(elbow.y, wrist.y, 0.85), wrist.x, wrist.y, u * 0.3, accent)
+        glove(side * u * 2.02, u * 0.72 + armDrop, u * 0.3, side > 0 ? 0.5 : Math.PI - 0.5)
+      }
+      arm(-1)
+      arm(1)
+
+      head(0, -u * 2.2, u * 0.62)
     } else {
       const stretch = lerp(0.4, 1, diveP)
-      // corpo esticado na direcao do mergulho
-      ctx.fillStyle = kit
+
+      // Corpo esticado na direcao do mergulho, com sombreamento e painel
+      const bodyGrad = ctx.createLinearGradient(0, -u, 0, u)
+      bodyGrad.addColorStop(0, kitHi)
+      bodyGrad.addColorStop(0.5, kit)
+      bodyGrad.addColorStop(1, kitSh)
+      ctx.fillStyle = bodyGrad
       ctx.beginPath()
-      ctx.ellipse(0, 0, u * 1.7 * stretch + u * 0.6, u * 1.05, 0, 0, TAU)
+      ctx.ellipse(0, 0, u * 1.7 * stretch + u * 0.6, u * 1.02, 0, 0, TAU)
       ctx.fill()
-      // pernas juntas para tras
-      this.limb(ctx, -u * 1.3 * stretch, u * 0.3, -u * 3.1 * stretch, u * 0.9, u * 0.58, kit)
-      this.limb(ctx, -u * 1.3 * stretch, u * 0.1, -u * 3.3 * stretch, u * 0.3, u * 0.58, kitShade)
-      this.limb(ctx, -u * 3.1 * stretch, u * 0.92, -u * 3.5 * stretch, u * 1.0, u * 0.38, '#0a0a0d')
-      this.limb(ctx, -u * 3.3 * stretch, u * 0.32, -u * 3.7 * stretch, u * 0.38, u * 0.38, '#0a0a0d')
-      // bracos esticados na direcao da bola
-      this.limb(ctx, u * 1.1 * stretch, -u * 0.4, u * 2.9 * stretch, -u * 1.15, u * 0.5, kit)
-      this.limb(ctx, u * 1.1 * stretch, 0.1 * u, u * 3.1 * stretch, -u * 0.55, u * 0.5, kitShade)
-      ctx.fillStyle = gloves
+      ctx.strokeStyle = 'rgba(141,255,90,0.4)'
+      ctx.lineWidth = u * 0.05
       ctx.beginPath()
-      ctx.arc(u * 2.9 * stretch, -u * 1.15, u * 0.38, 0, TAU)
-      ctx.arc(u * 3.1 * stretch, -u * 0.55, u * 0.38, 0, TAU)
-      ctx.fill()
-      // cabeca
-      ctx.fillStyle = skin
-      ctx.beginPath()
-      ctx.arc(u * 1.35 * stretch, -u * 0.75, u * 0.6, 0, TAU)
-      ctx.fill()
-      ctx.fillStyle = '#1c1108'
-      ctx.beginPath()
-      ctx.arc(u * 1.35 * stretch, -u * 0.95, u * 0.56, Math.PI * 0.9, TAU * 0.98)
-      ctx.fill()
+      ctx.ellipse(0, 0, u * 1.45 * stretch + u * 0.45, u * 0.78, 0, Math.PI * 0.15, Math.PI * 0.85)
+      ctx.stroke()
+
+      // Pernas juntas para tras (coxa + canela) com meiao e chuteira
+      const legBack = (off: number, tone0: string, tone1: string) => {
+        const hip: Vec = { x: -u * 1.3 * stretch, y: off }
+        const knee: Vec = { x: -u * 2.3 * stretch, y: off + u * 0.42 }
+        const ankle: Vec = { x: -u * 3.25 * stretch, y: off + u * 0.55 }
+        this.limbShaded(ctx, hip.x, hip.y, knee.x, knee.y, u * 0.58, tone0, kit, kitSh)
+        this.limbShaded(ctx, knee.x, knee.y, ankle.x, ankle.y, u * 0.46, tone1, kit, kitSh)
+        this.limb(ctx, knee.x, knee.y, lerp(knee.x, ankle.x, 0.15), lerp(knee.y, ankle.y, 0.15), u * 0.32, accent)
+        this.limbShaded(ctx, ankle.x, ankle.y, ankle.x - u * 0.4, ankle.y + u * 0.08, u * 0.38, '#3a4152', '#0a0a0d', '#050508')
+      }
+      legBack(u * 0.32, kitHi, kitHi)
+      legBack(-u * 0.05, panel, panel)
+
+      // Bracos esticados na direcao da bola com luvas abertas
+      const armDive = (sx: number, sy: number, ex: number, ey: number, tone: string) => {
+        const mid: Vec = { x: lerp(sx, ex, 0.5), y: lerp(sy, ey, 0.5) - u * 0.12 }
+        this.limbShaded(ctx, sx, sy, mid.x, mid.y, u * 0.5, tone, kit, kitSh)
+        this.limbShaded(ctx, mid.x, mid.y, ex, ey, u * 0.44, tone, kit, kitSh)
+        this.limb(ctx, lerp(mid.x, ex, 0.85), lerp(mid.y, ey, 0.85), ex, ey, u * 0.3, accent)
+      }
+      armDive(u * 1.1 * stretch, -u * 0.4, u * 2.9 * stretch, -u * 1.15, kitHi)
+      armDive(u * 1.1 * stretch, u * 0.1, u * 3.1 * stretch, -u * 0.55, panel)
+      const reachAng = Math.atan2(-u * 1.15 + u * 0.4, u * 2.9 - u * 1.1)
+      glove(u * 3.02 * stretch, -u * 1.22, u * 0.32, reachAng)
+      glove(u * 3.22 * stretch, -u * 0.6, u * 0.32, reachAng)
+
+      head(u * 1.35 * stretch, -u * 0.75, u * 0.6)
     }
   }
 
@@ -1137,18 +1331,29 @@ export class PenaltyEngine {
     return { pos: start, runP: 0, kickP: 0 }
   }
 
-  /** Batedor: camisa amarela, calcao azul. Vista de costas em tres quartos. */
+  /** Batedor: camisa amarela com gola e punhos verdes, calcao azul com friso. Vista de costas em tres quartos. */
   private drawKicker(ctx: CanvasRenderingContext2D) {
     const L = this.layout
     const { pos, runP, kickP } = this.kickerAnchor()
     const h = L.kickerH
     const u = h / 7
-    const shirt = '#ffd23f'
-    const shirtShade = '#e6b31f'
-    const shorts = '#1f4fd0'
+
     const skin = '#8a5a3b'
-    const socks = '#1f4fd0'
-    const boots = '#111318'
+    const skinHi = '#a5714b'
+    const skinSh = '#66412a'
+    const shirt = '#ffd23f'
+    const shirtHi = '#ffe37a'
+    const shirtSh = '#dba418'
+    const trim = '#127a45'
+    const shorts = '#1f4fd0'
+    const shortsSh = '#153a9e'
+    const sock = '#1f4fd0'
+    const sockHi = '#3f6ae8'
+    const sockSh = '#12308c'
+    const boot = '#15181f'
+    const bootHi = '#333a4c'
+    const hair = '#241509'
+    const hairHi = '#3d2712'
 
     ctx.save()
     ctx.translate(pos.x, pos.y)
@@ -1164,99 +1369,179 @@ export class PenaltyEngine {
     const legSwing = running ? Math.sin(stepPhase) : 0
     const idleBreath = this.state === 'ready' || this.state === 'aiming' ? Math.sin(this.now * 1.8) * u * 0.06 : 0
 
-    // Perna de apoio (esquerda)
-    const lHipX = -u * 0.35
-    const lHipY = u * 0.9
-    let lFootX = lHipX - u * 0.25 + (running ? legSwing * u * 0.9 : 0)
-    let lFootY = u * 3.35
-    // Perna do chute (direita)
-    const rHipX = u * 0.35
-    const rHipY = u * 0.9
-    let rFootX = rHipX + u * 0.25 - (running ? legSwing * u * 0.9 : 0)
-    let rFootY = u * 3.35
+    // Quadris
+    const lHip: Vec = { x: -u * 0.38, y: u * 0.92 }
+    const rHip: Vec = { x: u * 0.38, y: u * 0.92 }
+
+    // Pes
+    let lFoot: Vec = { x: lHip.x - u * 0.26 + (running ? legSwing * u * 0.92 : 0), y: u * 3.38 }
+    let rFoot: Vec = { x: rHip.x + u * 0.26 - (running ? legSwing * u * 0.92 : 0), y: u * 3.38 }
+    let rKnee: Vec | null = null
 
     if (kickP > 0) {
-      // Balanco da perna do chute: de tras (cocked) para frente estendida
+      // Balanco da perna do chute: de tras (armada) para frente estendida, com joelho dobrando
       const swing = easeOutCubic(kickP)
-      const ang = lerp(Math.PI * 0.78, -Math.PI * 0.28, swing) // atras -> frente
+      const ang = lerp(Math.PI * 0.78, -Math.PI * 0.28, swing)
       const len = u * 2.5
-      rFootX = rHipX + Math.cos(ang + Math.PI / 2) * len * 0.9
-      rFootY = rHipY + Math.sin(ang + Math.PI / 2) * len
-      lFootX = lHipX - u * 0.3
-      lFootY = u * 3.35
+      rFoot = {
+        x: rHip.x + Math.cos(ang + Math.PI / 2) * len * 0.9,
+        y: rHip.y + Math.sin(ang + Math.PI / 2) * len
+      }
+      const bend = lerp(0.85, 0.12, swing)
+      rKnee = {
+        x: rHip.x + Math.cos(ang + bend + Math.PI / 2) * len * 0.52,
+        y: rHip.y + Math.sin(ang + bend + Math.PI / 2) * len * 0.52
+      }
+      lFoot = { x: lHip.x - u * 0.32, y: u * 3.38 }
     }
 
-    // tronco inclina no chute
+    // Tronco inclina no chute
     const lean = kickP > 0 ? lerp(0.06, -0.22, easeOutCubic(kickP)) : running ? 0.12 : 0.02
     ctx.rotate(lean)
 
-    // Perna esquerda (apoio)
-    this.limb(ctx, lHipX, lHipY, lFootX, lFootY - u * 0.9, u * 0.62, skin)
-    this.limb(ctx, lFootX, lFootY - u * 0.95, lFootX, lFootY - u * 0.2, u * 0.55, socks)
-    this.limb(ctx, lFootX, lFootY - u * 0.15, lFootX - u * 0.42, lFootY, u * 0.42, boots)
+    // Perna completa: coxa/panturrilha de pele, meiao com punho amarelo, chuteira com sola
+    const drawLeg = (hip: Vec, foot: Vec, knee: Vec | null, bootDir: number) => {
+      const k = knee ?? {
+        x: lerp(hip.x, foot.x, 0.5) + bootDir * u * 0.1,
+        y: lerp(hip.y, foot.y, 0.52)
+      }
+      const sockTop: Vec = { x: lerp(k.x, foot.x, 0.4), y: lerp(k.y, foot.y, 0.4) }
+      const ankle: Vec = { x: lerp(k.x, foot.x, 0.96), y: lerp(k.y, foot.y, 0.96) }
+      this.limbShaded(ctx, hip.x, hip.y, k.x, k.y, u * 0.66, skinHi, skin, skinSh)
+      this.limbShaded(ctx, k.x, k.y, sockTop.x, sockTop.y, u * 0.56, skinHi, skin, skinSh)
+      this.limbShaded(ctx, sockTop.x, sockTop.y, ankle.x, ankle.y, u * 0.52, sockHi, sock, sockSh)
+      // Punho amarelo do meiao
+      this.limb(
+        ctx,
+        sockTop.x, sockTop.y,
+        lerp(sockTop.x, ankle.x, 0.16), lerp(sockTop.y, ankle.y, 0.16),
+        u * 0.54, shirt
+      )
+      // Chuteira com sola clara
+      this.limbShaded(ctx, ankle.x, ankle.y, ankle.x + bootDir * u * 0.5, ankle.y + u * 0.12, u * 0.44, bootHi, boot, '#07090e')
+      this.limb(ctx, ankle.x + bootDir * u * 0.02, ankle.y + u * 0.24, ankle.x + bootDir * u * 0.5, ankle.y + u * 0.3, u * 0.09, '#dfe5ee')
+    }
 
-    // Calcao azul
-    ctx.fillStyle = shorts
+    // Perna de apoio (esquerda) atras do calcao
+    drawLeg(lHip, lFoot, null, -1)
+
+    // Calcao azul com sombreamento e frisos amarelos laterais
+    const shortsGrad = ctx.createLinearGradient(-u, 0, u, 0)
+    shortsGrad.addColorStop(0, '#2f5fe0')
+    shortsGrad.addColorStop(0.5, shorts)
+    shortsGrad.addColorStop(1, shortsSh)
+    ctx.fillStyle = shortsGrad
     ctx.beginPath()
     ctx.moveTo(-u * 0.95, u * 0.15)
     ctx.lineTo(u * 0.95, u * 0.15)
-    ctx.lineTo(u * 1.05, u * 1.35)
-    ctx.lineTo(u * 0.25, u * 1.5)
-    ctx.lineTo(0, u * 1.1)
-    ctx.lineTo(-u * 0.25, u * 1.5)
-    ctx.lineTo(-u * 1.05, u * 1.35)
+    ctx.lineTo(u * 1.08, u * 1.38)
+    ctx.lineTo(u * 0.25, u * 1.52)
+    ctx.lineTo(0, u * 1.12)
+    ctx.lineTo(-u * 0.25, u * 1.52)
+    ctx.lineTo(-u * 1.08, u * 1.38)
     ctx.closePath()
     ctx.fill()
-
-    // Perna direita (chute) por cima do calcao
-    this.limb(ctx, rHipX, rHipY, rFootX, rFootY - u * 0.9, u * 0.62, skin)
-    this.limb(ctx, rFootX, rFootY - u * 0.95, rFootX, rFootY - u * 0.2, u * 0.55, socks)
-    this.limb(ctx, rFootX, rFootY - u * 0.15, rFootX + u * 0.45, rFootY + u * 0.05, u * 0.42, boots)
-
-    // Camisa amarela (vista de costas)
-    ctx.fillStyle = shirt
+    ctx.strokeStyle = shirt
+    ctx.lineWidth = u * 0.07
     ctx.beginPath()
-    ctx.moveTo(-u * 1.1, -u * 2.1)
-    ctx.quadraticCurveTo(0, -u * 2.45, u * 1.1, -u * 2.1)
-    ctx.lineTo(u * 1.0, u * 0.35)
-    ctx.quadraticCurveTo(0, u * 0.6, -u * 1.0, u * 0.35)
+    ctx.moveTo(-u * 0.97, u * 0.22)
+    ctx.lineTo(-u * 1.06, u * 1.32)
+    ctx.moveTo(u * 0.97, u * 0.22)
+    ctx.lineTo(u * 1.06, u * 1.32)
+    ctx.stroke()
+
+    // Perna do chute (direita) por cima do calcao
+    drawLeg(rHip, rFoot, rKnee, 1)
+
+    // Camisa amarela com sombreamento (vista de costas)
+    const shirtGrad = ctx.createLinearGradient(-u * 1.1, 0, u * 1.1, 0)
+    shirtGrad.addColorStop(0, shirtHi)
+    shirtGrad.addColorStop(0.45, shirt)
+    shirtGrad.addColorStop(1, shirtSh)
+    ctx.fillStyle = shirtGrad
+    ctx.beginPath()
+    ctx.moveTo(-u * 1.1, -u * 2.08)
+    ctx.quadraticCurveTo(0, -u * 2.45, u * 1.1, -u * 2.08)
+    ctx.quadraticCurveTo(u * 1.16, -u * 1.2, u * 1.0, u * 0.35)
+    ctx.quadraticCurveTo(0, u * 0.62, -u * 1.0, u * 0.35)
+    ctx.quadraticCurveTo(-u * 1.16, -u * 1.2, -u * 1.1, -u * 2.08)
     ctx.closePath()
     ctx.fill()
-    // Numero 9 nas costas
-    ctx.fillStyle = '#12326e'
+    // Costura central e barra da camisa
+    ctx.strokeStyle = 'rgba(120,80,0,0.18)'
+    ctx.lineWidth = u * 0.05
+    ctx.beginPath()
+    ctx.moveTo(0, -u * 2.3)
+    ctx.lineTo(0, u * 0.5)
+    ctx.stroke()
+    ctx.strokeStyle = trim
+    ctx.lineWidth = u * 0.09
+    ctx.beginPath()
+    ctx.moveTo(-u * 0.98, u * 0.38)
+    ctx.quadraticCurveTo(0, u * 0.64, u * 0.98, u * 0.38)
+    ctx.stroke()
+    // Gola verde
+    ctx.strokeStyle = trim
+    ctx.lineWidth = u * 0.14
+    ctx.beginPath()
+    ctx.moveTo(-u * 0.46, -u * 2.22)
+    ctx.quadraticCurveTo(0, -u * 2.42, u * 0.46, -u * 2.22)
+    ctx.stroke()
+    // Numero 9 com contorno
     ctx.font = `800 ${u * 1.15}px 'Segoe UI', sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('9', 0, -u * 0.85)
-    // Sombra lateral da camisa
-    ctx.fillStyle = shirtShade
+    ctx.lineWidth = u * 0.16
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+    ctx.strokeText('9', 0, -u * 0.82)
+    ctx.fillStyle = '#12326e'
+    ctx.fillText('9', 0, -u * 0.82)
+
+    // Bracos em dois segmentos: manga amarela + antebraco de pele + mao
+    const armSwing = running
+      ? Math.sin(stepPhase + Math.PI) * u * 0.7
+      : kickP > 0
+        ? lerp(u * 0.3, -u * 0.8, easeOutCubic(kickP))
+        : idleBreath * 3
+    const drawArm = (side: number, swingVal: number) => {
+      const shoulder: Vec = { x: side * u * 0.95, y: -u * 1.72 }
+      const elbow: Vec = { x: side * u * 1.36, y: -u * 0.75 + swingVal * 0.55 }
+      const hand: Vec = { x: side * u * 1.58, y: u * 0.05 + swingVal }
+      this.limbShaded(ctx, shoulder.x, shoulder.y, elbow.x, elbow.y, u * 0.46, shirtHi, shirt, shirtSh)
+      // Punho verde da manga
+      this.limb(ctx, lerp(shoulder.x, elbow.x, 0.9), lerp(shoulder.y, elbow.y, 0.9), elbow.x, elbow.y, u * 0.36, trim)
+      this.limbShaded(ctx, elbow.x, elbow.y, hand.x, hand.y, u * 0.34, skinHi, skin, skinSh)
+      ctx.fillStyle = skin
+      ctx.beginPath()
+      ctx.arc(hand.x, hand.y, u * 0.26, 0, TAU)
+      ctx.fill()
+    }
+    drawArm(-1, armSwing)
+    drawArm(1, -armSwing)
+
+    // Pescoco e cabeca (vista de tras: cabelo dominante, orelhas nas laterais)
+    this.limbShaded(ctx, 0, -u * 2.28 + idleBreath, 0, -u * 2.5 + idleBreath, u * 0.34, skinHi, skin, skinSh)
+    ctx.fillStyle = skin
     ctx.beginPath()
-    ctx.moveTo(u * 0.7, -u * 2.16)
-    ctx.lineTo(u * 1.1, -u * 2.1)
-    ctx.lineTo(u * 1.0, u * 0.35)
-    ctx.lineTo(u * 0.72, u * 0.42)
+    ctx.arc(0, -u * 2.88 + idleBreath, u * 0.62, 0, TAU)
+    ctx.fill()
+    ctx.fillStyle = skinSh
+    ctx.beginPath()
+    ctx.arc(-u * 0.6, -u * 2.86 + idleBreath, u * 0.11, 0, TAU)
+    ctx.arc(u * 0.6, -u * 2.86 + idleBreath, u * 0.11, 0, TAU)
+    ctx.fill()
+    // Cabelo cobrindo a nuca, com brilho
+    ctx.fillStyle = hair
+    ctx.beginPath()
+    ctx.arc(0, -u * 2.92 + idleBreath, u * 0.61, Math.PI * 0.78, TAU * 1.11)
+    ctx.quadraticCurveTo(0, -u * 2.55 + idleBreath, -u * 0.57, -u * 2.7 + idleBreath)
     ctx.closePath()
     ctx.fill()
-
-    // Bracos
-    const armSwing = running ? Math.sin(stepPhase + Math.PI) * u * 0.7 : kickP > 0 ? lerp(u * 0.3, -u * 0.8, easeOutCubic(kickP)) : idleBreath * 3
-    this.limb(ctx, -u * 0.95, -u * 1.7, -u * 1.5, -u * 0.2 + armSwing, u * 0.45, shirt)
-    this.limb(ctx, u * 0.95, -u * 1.7, u * 1.5, -u * 0.2 - armSwing, u * 0.45, shirt)
-    ctx.fillStyle = skin
+    ctx.strokeStyle = hairHi
+    ctx.lineWidth = u * 0.07
     ctx.beginPath()
-    ctx.arc(-u * 1.5, -u * 0.2 + armSwing, u * 0.3, 0, TAU)
-    ctx.arc(u * 1.5, -u * 0.2 - armSwing, u * 0.3, 0, TAU)
-    ctx.fill()
-
-    // Cabeca (vista de tras: cabelo)
-    ctx.fillStyle = skin
-    ctx.beginPath()
-    ctx.arc(0, -u * 2.85 + idleBreath, u * 0.62, 0, TAU)
-    ctx.fill()
-    ctx.fillStyle = '#241509'
-    ctx.beginPath()
-    ctx.arc(0, -u * 2.9 + idleBreath, u * 0.6, Math.PI * 0.85, TAU * 1.075)
-    ctx.fill()
+    ctx.arc(0, -u * 2.92 + idleBreath, u * 0.48, Math.PI * 1.15, Math.PI * 1.6)
+    ctx.stroke()
 
     ctx.restore()
   }
