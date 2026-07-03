@@ -33,6 +33,18 @@ function updateLayoutMode() {
       : { width: vw, height: vw / ratio }
 }
 
+// Confete decorativo continuo (telao + arquibancada da foto de fundo) —
+// espalhamento deterministico via aritmetica modular, sem Math.random(),
+// pra nao gerar layout diferente a cada re-render.
+const CONFETTI_COLORS = ['#8dff5a', '#ffd23f', '#38bdf8', '#ffffff']
+const confettiPieces = Array.from({ length: 18 }, (_, i) => ({
+  left: (i * 37) % 100,
+  delay: -((i * 1.3) % 7),
+  duration: 5 + (i % 5) * 0.7,
+  drift: `${(i % 2 === 0 ? 1 : -1) * (20 + (i % 4) * 10)}px`,
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length]
+}))
+
 const game = ref<GameInfo | null>(null)
 const modal = ref<'none' | 'win' | 'lose'>('none')
 const prizeResult = ref<PenaltyPlayResult | null>(null)
@@ -135,6 +147,29 @@ onBeforeUnmount(() => {
     :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, backgroundImage: `url(${bgImage})` }"
   >
     <canvas ref="canvasRef" class="game-canvas" />
+
+    <!-- Confete continuo, sutil, por cima da foto de fundo -->
+    <div class="confetti-layer" aria-hidden="true">
+      <span
+        v-for="(piece, i) in confettiPieces"
+        :key="i"
+        class="confetti-piece"
+        :style="{
+          left: `${piece.left}%`,
+          animationDelay: `${piece.delay}s`,
+          animationDuration: `${piece.duration}s`,
+          '--drift': piece.drift,
+          backgroundColor: piece.color
+        }"
+      />
+    </div>
+
+    <!-- Telao central: usa o quadro ja pintado na foto de fundo -->
+    <div class="jumbotron" aria-hidden="true">
+      <span class="jumbotron-label">{{ game?.name ?? 'Penalti Premiado' }}</span>
+      <strong class="jumbotron-value">BOA SORTE!</strong>
+      <span class="jumbotron-tag">★ ★ ★ ★ ★</span>
+    </div>
 
     <!-- HUD -->
     <header class="hud">
@@ -256,6 +291,73 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* ------------------------------ Confete ------------------------------ */
+
+.confetti-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -8%;
+  width: 6px;
+  height: 12px;
+  border-radius: 1px;
+  opacity: 0;
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes confetti-fall {
+  0% { top: -8%; opacity: 0; transform: translateX(0) rotate(0deg); }
+  8% { opacity: 0.9; }
+  92% { opacity: 0.9; }
+  100% { top: 104%; opacity: 0; transform: translateX(var(--drift)) rotate(480deg); }
+}
+
+/* ------------------------------ Telao ------------------------------ */
+
+.jumbotron {
+  position: absolute;
+  left: 50%;
+  top: 27.6%;
+  width: 34%;
+  height: 8%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  text-align: center;
+}
+
+.jumbotron-label {
+  font-size: clamp(6px, 1.4vw, 10px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.jumbotron-value {
+  font-size: clamp(12px, 3.4vw, 22px);
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  color: #8dff5a;
+  text-shadow: 0 0 10px rgba(141, 255, 90, 0.75), 0 0 24px rgba(141, 255, 90, 0.45);
+  animation: value-glow 2.2s ease-in-out infinite;
+}
+
+.jumbotron-tag {
+  font-size: clamp(6px, 1.3vw, 10px);
+  letter-spacing: 0.2em;
+  color: #ffd23f;
 }
 
 /* ------------------------------ HUD ------------------------------ */
