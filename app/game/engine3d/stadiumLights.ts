@@ -1,5 +1,19 @@
 import { CanvasTexture, Group, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three'
 
+export interface StadiumLights {
+  object3D: Group
+  update(now: number): void
+}
+
+const PULSE_MIN = 0.7
+const PULSE_MAX = 1.0
+const PULSE_CYCLE_MIN = 4
+const PULSE_CYCLE_MAX = 6
+
+function randomRange(min: number, max: number): number {
+  return min + Math.random() * (max - min)
+}
+
 /** Gradiente radial branco->transparente para o halo dos refletores. */
 function buildGlowTexture(): CanvasTexture {
   const size = 128
@@ -21,7 +35,7 @@ function buildGlowTexture(): CanvasTexture {
  * como na arte 2D de referencia: uma faixa escura de cobertura + halos de
  * luz em billboard (sem luz dinamica real, so sprite).
  */
-export function buildStadiumLights(width: number, topY: number, z: number): Group {
+export function buildStadiumLights(width: number, topY: number, z: number): StadiumLights {
   const group = new Group()
 
   const roof = new Mesh(
@@ -34,6 +48,7 @@ export function buildStadiumLights(width: number, topY: number, z: number): Grou
   const glowTexture = buildGlowTexture()
   // ±18% da largura para os laterais cairem dentro do FOV estreito da camera.
   const positions = [-width * 0.18, 0, width * 0.18]
+  const glows: { material: MeshBasicMaterial; baseOpacity: number; freq: number; phase: number }[] = []
   for (const x of positions) {
     const fixture = new Mesh(
       new PlaneGeometry(1.0, 0.2),
@@ -42,17 +57,29 @@ export function buildStadiumLights(width: number, topY: number, z: number): Grou
     fixture.position.set(x, topY + 0.45, z)
     group.add(fixture)
 
-    const glow = new Mesh(
-      new PlaneGeometry(5, 5),
-      new MeshBasicMaterial({
-        map: glowTexture,
-        transparent: true,
-        depthWrite: false
-      })
-    )
+    const glowMaterial = new MeshBasicMaterial({
+      map: glowTexture,
+      transparent: true,
+      depthWrite: false
+    })
+    const glow = new Mesh(new PlaneGeometry(5, 5), glowMaterial)
     glow.position.set(x, topY + 0.5, z + 0.05)
     group.add(glow)
+
+    glows.push({
+      material: glowMaterial,
+      baseOpacity: glowMaterial.opacity,
+      freq: (Math.PI * 2) / randomRange(PULSE_CYCLE_MIN, PULSE_CYCLE_MAX),
+      phase: randomRange(0, Math.PI * 2)
+    })
   }
 
-  return group
+  function update(now: number) {
+    for (const glow of glows) {
+      const pulse = PULSE_MIN + ((Math.sin(now * glow.freq + glow.phase) + 1) / 2) * (PULSE_MAX - PULSE_MIN)
+      glow.material.opacity = glow.baseOpacity * pulse
+    }
+  }
+
+  return { object3D: group, update }
 }

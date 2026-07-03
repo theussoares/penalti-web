@@ -12,12 +12,14 @@ import type { Character } from './character'
 import { createCharacter } from './character'
 import { buildBallMesh } from './ballMesh'
 import { arcHeight, ballFlightPosition } from './ballFlight'
-import { buildAdBoards } from './adBoardMesh'
+import { buildAdBoards, type AdBoards } from './adBoardMesh'
 import { buildAimReticle, type AimReticle } from './aimReticle'
 import { buildBlobShadow } from './blobShadow'
 import { buildCameraRig, type CameraRig } from './cameraRig'
-import { buildStadiumLights } from './stadiumLights'
+import { buildStadiumLights, type StadiumLights } from './stadiumLights'
 import { buildCrowdBillboard, type CrowdBillboard } from './crowdBillboard'
+import { buildFieldAtmosphere, type FieldAtmosphere } from './fieldAtmosphere'
+import { buildAmbientEffects, type AmbientEffects } from './ambientEffects'
 import { buildGoalFrame } from './goalFrameMesh'
 import { buildGroundMesh } from './groundMesh'
 import { decideShot } from './goalkeeperAI'
@@ -64,6 +66,10 @@ export class PenaltyEngine3D {
   private ballMesh: Mesh
   private netMesh: NetMesh
   private crowd: CrowdBillboard
+  private adBoards: AdBoards
+  private stadiumLightsRig: StadiumLights
+  private fieldAtmosphere: FieldAtmosphere
+  private ambientEffects: AmbientEffects
   private aimReticle: AimReticle
   private ballShadow: Mesh
   private kickerShadow: Mesh
@@ -108,9 +114,9 @@ export class PenaltyEngine3D {
     this.scene.add(buildGoalFrame(this.layout))
 
     const sceneryWidth = this.layout.goalWidth * 4.5
-    const adBoards = buildAdBoards(sceneryWidth, 1.0)
-    adBoards.position.set(0, 0.55, this.layout.goalLineZ - this.layout.goalDepth - 0.6)
-    this.scene.add(adBoards)
+    this.adBoards = buildAdBoards(sceneryWidth, 1.0)
+    this.adBoards.mesh.position.set(0, 0.55, this.layout.goalLineZ - this.layout.goalDepth - 0.6)
+    this.scene.add(this.adBoards.mesh)
 
     this.ballMesh = buildBallMesh(this.layout.ballRadius)
     this.scene.add(this.ballMesh)
@@ -131,7 +137,14 @@ export class PenaltyEngine3D {
     this.crowd.mesh.rotation.x = -0.12
     this.scene.add(this.crowd.mesh)
 
-    this.scene.add(buildStadiumLights(sceneryWidth, 1.0 + 5.5 + 0.2, crowdZ + 0.05))
+    this.stadiumLightsRig = buildStadiumLights(sceneryWidth, 1.0 + 5.5 + 0.2, crowdZ + 0.05)
+    this.scene.add(this.stadiumLightsRig.object3D)
+
+    this.fieldAtmosphere = buildFieldAtmosphere(this.layout)
+    this.scene.add(this.fieldAtmosphere.object3D)
+
+    this.ambientEffects = buildAmbientEffects(this.layout)
+    this.scene.add(this.ambientEffects.object3D)
 
     // Sombras falsas coladas no gramado (sem sombra dinamica no v1).
     this.ballShadow = buildBlobShadow(this.layout.ballRadius * 2.2)
@@ -331,6 +344,10 @@ export class PenaltyEngine3D {
     this.aimReticle.update(aiming ? this.aim : null, aimInGoal, now)
 
     this.crowd.setExcitement(this.outcome === 'goal' && this.state !== 'ready' ? 1 : 0, now)
+    this.adBoards.update(now)
+    this.stadiumLightsRig.update(now)
+    this.fieldAtmosphere.update(now)
+    this.ambientEffects.update(now)
     this.netMesh.update(this.ripples, now)
     this.ballMesh.position.set(this.ballPos.x, this.ballPos.y, this.ballPos.z)
 
@@ -357,6 +374,7 @@ export class PenaltyEngine3D {
     this.cb.onImpact?.(this.outcome)
     if (this.outcome === 'goal') {
       this.ripples.push({ x: this.ballEnd.x, y: this.ballEnd.y, start: now })
+      this.crowd.celebrate(now)
     }
 
     // Velocidade inicial do pos-impacto — antes disso a bola congelava no
