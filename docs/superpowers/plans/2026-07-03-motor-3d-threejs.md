@@ -1408,7 +1408,7 @@ git commit --no-gpg-sign -m "feat: adiciona carregador do modelo real do goleiro
 - Create: `app/game/engine3d/penaltyEngine3d.ts`
 
 **Interfaces:**
-- Consumes: todos os módulos das Tasks 2–13 (`computeWorldLayout`, `decideShot`, `ballFlightPosition`/`arcHeight`, `netDisplacement`, `createCharacter`, `buildCrowdBillboard`, `buildBallMesh`, `buildNetMesh`, `buildCameraRig`, `screenToAim`, `loadKeeperDiveModel`/`KEEPER_DIVE_NATURAL_SIDE`), `EngineCallbacks`/`EngineState`/`ShotOutcome`/`Vec2` de `../types`.
+- Consumes: todos os módulos das Tasks 2–13 (`computeWorldLayout`, `decideShot`, `ballFlightPosition`/`arcHeight`, `netDisplacement`, `createCharacter`, `buildCrowdBillboard`, `buildBallMesh`, `buildNetMesh`, `buildCameraRig`, `screenToAim`, `loadKeeperDiveModel`), `EngineCallbacks`/`EngineState`/`ShotOutcome`/`Vec2` de `../types`.
 - Produces: classe `PenaltyEngine3D` com a **mesma interface pública** de `PenaltyEngine` (`constructor(canvas, callbacks)`, `reset()`, `destroy()`, `state`) — usada pela Task 15 (`PenaltyGame.client.vue`).
 
 - [ ] **Step 1: Implementar**
