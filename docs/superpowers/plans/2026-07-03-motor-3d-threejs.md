@@ -15,11 +15,13 @@
 - Alvo de performance: Android de entrada/médio — sem sombras dinâmicas, sem pós-processamento, `antialias: false`, `devicePixelRatio` limitado a 1.5.
 - Torcida permanece 2D (billboard), reaproveitando o gerador de textura já existente em `engine.ts` (`renderCrowdLayers`).
 - Câmera com travelling simples; sem corte de replay no v1.
-- Personagens (batedor e goleiro) são **100% procedurais**, construídos por código — sem tentativa de carregar asset glTF externo. Pesquisa confirmou que não existe pacote gratuito/redistribuível de jogador+goleiro riggado com animação de chute e mergulho; decisão do usuário foi não depender de asset externo algum.
+- Personagens (batedor e goleiro) são **procedurais por padrão**, construídos por código — pesquisa confirmou que não existe pacote gratuito/redistribuível de jogador+goleiro riggado com chute e mergulho, então esse é o caminho base, não um fallback de algo melhor.
+- **Exceção**: o usuário conseguiu um asset glTF real e gratuito do goleiro mergulhando/defendendo (Mixamo via Blender, rig `mixamorig:`, 1 clipe de animação de 3.27s). Esse modelo substitui o goleiro procedural **apenas durante as fases `flight`/`aftermath` do chute** (o momento do mergulho); em todas as outras fases (idle, etc.) e para o batedor, continua tudo procedural. Ver Tasks 12/13.
+- Alvo de performance também vale para assets externos: o `.glb` bruto do goleiro tinha 10.6MB (8.5MB só de texturas) — inaceitável para um jogo que hoje não carrega nenhum asset externo. Precisa ser comprimido (meta: ~500KB-1MB) antes de entrar no jogo (Task 12).
 - Sem CSS inline, sem strings de UI hardcoded fora de i18n — não se aplica aqui (não há UI nova, só canvas/WebGL).
 - Sem testes unitários para renderização WebGL (não é unit-testável de forma significativa) — testes cobrem apenas os módulos de lógica pura.
 - Commits usam `git commit --no-gpg-sign` — o ambiente não tem `ssh-agent` rodando para a chave de assinatura configurada (`gpg.format=ssh`), e o usuário autorizou explicitamente pular a assinatura para as tasks deste plano. Não alterar a configuração global do git (`commit.gpgsign`) — usar só a flag por commit.
-- Ao final (Task 14), remover `app/game/engine.ts` (motor 2D antigo) — não manter os dois motores com toggle.
+- Ao final (Task 16), remover `app/game/engine.ts` (motor 2D antigo) — não manter os dois motores com toggle.
 
 ---
 
@@ -145,7 +147,7 @@ git commit --no-gpg-sign -m "chore: adiciona three, vitest e tipos compartilhado
 
 **Interfaces:**
 - Consumes: nenhuma (módulo raiz).
-- Produces: `WorldLayout` (interface), `computeWorldLayout(): WorldLayout`, `clampAim(x, y, bounds): Vec2` — usados pelas Tasks 3 (IA do goleiro), 11 (input) e 12 (orquestrador).
+- Produces: `WorldLayout` (interface), `computeWorldLayout(): WorldLayout`, `clampAim(x, y, bounds): Vec2` — usados pelas Tasks 3 (IA do goleiro), 11 (input) e 14 (orquestrador).
 
 - [ ] **Step 1: Escrever os testes**
 
@@ -446,7 +448,7 @@ git commit --no-gpg-sign -m "feat: porta IA do goleiro e calculo de resultado pa
 
 **Interfaces:**
 - Consumes: `Vec3` de `../types`.
-- Produces: `arcHeight(targetY, goalHeight): number`, `ballFlightPosition(start, end, t, height): Vec3` — usados pela Task 9 (malha da bola) e Task 12 (orquestrador).
+- Produces: `arcHeight(targetY, goalHeight): number`, `ballFlightPosition(start, end, t, height): Vec3` — usados pela Task 9 (malha da bola) e Task 14 (orquestrador).
 
 - [ ] **Step 1: Escrever os testes**
 
@@ -819,7 +821,7 @@ git commit --no-gpg-sign -m "feat: adiciona rig procedural do batedor e goleiro"
 
 **Interfaces:**
 - Consumes: `buildProceduralCharacter`, `CharacterPhase`, `CharacterRole` de `./proceduralCharacter`.
-- Produces: `Character` (interface: `{ object3D: Object3D; update(phase: CharacterPhase, t: number, deltaSeconds: number): void }`), `createCharacter(role): Character` — usado pela Task 12 (orquestrador).
+- Produces: `Character` (interface: `{ object3D: Object3D; update(phase: CharacterPhase, t: number, deltaSeconds: number): void }`), `createCharacter(role): Character` — usado pela Task 14 (orquestrador).
 
 - [ ] **Step 1: Implementar**
 
@@ -868,7 +870,7 @@ git commit --no-gpg-sign -m "feat: adiciona controlador de personagem sobre o ri
 
 **Interfaces:**
 - Consumes: `CanvasTexture`, `Mesh`, `PlaneGeometry`, `MeshBasicMaterial` de `three`.
-- Produces: `CrowdBillboard` (interface: `{ mesh: Mesh; setExcitement(value: number, now: number): void }`), `buildCrowdBillboard(width, height): CrowdBillboard` — usado pela Task 12.
+- Produces: `CrowdBillboard` (interface: `{ mesh: Mesh; setExcitement(value: number, now: number): void }`), `buildCrowdBillboard(width, height): CrowdBillboard` — usado pela Task 14.
 
 - [ ] **Step 1: Implementar**
 
@@ -977,7 +979,7 @@ git commit --no-gpg-sign -m "feat: adiciona torcida como billboard 2D atras do g
 
 **Interfaces:**
 - Consumes: `ballFlightPosition`/`arcHeight` de `./ballFlight`; `netDisplacement`, `Ripple` de `./netRipple`; `WorldLayout` de `./worldGeometry`.
-- Produces: `buildBallMesh(radius): Mesh`, `buildNetMesh(layout): { mesh: LineSegments; update(ripples, now): void }` — usados pela Task 12.
+- Produces: `buildBallMesh(radius): Mesh`, `buildNetMesh(layout): { mesh: LineSegments; update(ripples, now): void }` — usados pela Task 14.
 
 - [ ] **Step 1: Implementar a bola**
 
@@ -1102,7 +1104,7 @@ git commit --no-gpg-sign -m "feat: adiciona malhas 3D de bola e rede"
 
 **Interfaces:**
 - Consumes: `PerspectiveCamera`, `Vector3` de `three`; `EngineState`, `Vec3` de `../types`.
-- Produces: `CameraRig` (interface: `{ camera: PerspectiveCamera; update(state, stateT, ballPos): void; resize(aspect): void }`), `buildCameraRig(): CameraRig` — usado pela Task 12.
+- Produces: `CameraRig` (interface: `{ camera: PerspectiveCamera; update(state, stateT, ballPos): void; resize(aspect): void }`), `buildCameraRig(): CameraRig` — usado pela Task 14.
 
 - [ ] **Step 1: Implementar**
 
@@ -1175,7 +1177,7 @@ git commit --no-gpg-sign -m "feat: adiciona camera dinamica com travelling e sha
 
 **Interfaces:**
 - Consumes: `Raycaster`, `Plane`, `Vector2`, `Vector3`, `PerspectiveCamera` de `three`; `clampAim`, `WorldLayout` de `./worldGeometry`.
-- Produces: `screenToAim(clientX, clientY, canvasRect, camera, layout): Vec2` — usado pela Task 12.
+- Produces: `screenToAim(clientX, clientY, canvasRect, camera, layout): Vec2` — usado pela Task 14.
 
 - [ ] **Step 1: Implementar**
 
@@ -1223,14 +1225,164 @@ git commit --no-gpg-sign -m "feat: adiciona conversao de toque em coordenada de 
 
 ---
 
-### Task 12: Orquestrador `PenaltyEngine3D`
+### Task 12: Compressão do asset real do goleiro (mergulho)
+
+O usuário forneceu um `.glb` real do goleiro mergulhando e defendendo (fonte:
+Mixamo, convertido via Blender), colocado na raiz do projeto como
+`Goalkeeper Diving Save (1).glb`. Tem 1 animação (`Armature|mixamo.com|Base
+Layer`, 3.27s), rig padrão Mixamo (`mixamorig:...`, 65 ossos), mas **10.6MB**
+no total — **8.5MB só de 4 texturas PNG**. Precisa ser comprimido antes de
+entrar no jogo (meta acordada com o usuário: ~500KB-1MB final).
+
+**Files:**
+- Move: `Goalkeeper Diving Save (1).glb` (raiz do projeto) → `raw-assets/goalkeeper-diving-save.glb`
+- Modify: `.gitignore` (adiciona `raw-assets`)
+- Modify: `package.json`/`package-lock.json` (nova devDependency)
+- Create: `public/models/goalkeeper-dive.glb` (gerado, otimizado)
+
+**Interfaces:**
+- Produces: arquivo estático servido pela URL relativa `./models/goalkeeper-dive.glb` (Nuxt serve `public/` como raiz do site) — consumido pela Task 13 (carregador do modelo).
+
+- [ ] **Step 1: Mover o arquivo bruto para fora do controle de versão**
+
+Run: `mkdir -p raw-assets && mv "Goalkeeper Diving Save (1).glb" "raw-assets/goalkeeper-diving-save.glb"`
+
+- [ ] **Step 2: Ignorar a pasta de assets brutos**
+
+Edite `.gitignore`, adicionando a linha (mantendo as demais):
+
+```
+raw-assets
+```
+
+- [ ] **Step 3: Instalar a ferramenta de otimização**
+
+Run: `npm install -D @gltf-transform/cli`
+
+- [ ] **Step 4: Otimizar o modelo**
+
+Run:
+
+```bash
+mkdir -p public/models
+npx gltf-transform optimize raw-assets/goalkeeper-diving-save.glb public/models/goalkeeper-dive.glb --compress meshopt --texture-compress webp --texture-size 512x512
+```
+
+- [ ] **Step 5: Conferir o tamanho final**
+
+Run: `ls -la public/models/goalkeeper-dive.glb`
+
+Expected: abaixo de ~1MB. Se ainda estiver acima, repita o Step 4 trocando
+`--texture-size 512x512` por `--texture-size 256x256` até ficar dentro da
+meta. Registre no relatório o tamanho final alcançado.
+
+- [ ] **Step 6: Commit (só o arquivo otimizado, nunca o bruto)**
+
+```bash
+git add .gitignore package.json package-lock.json public/models/goalkeeper-dive.glb
+git commit --no-gpg-sign -m "feat: adiciona modelo 3D real do goleiro mergulhando (otimizado)"
+```
+
+Confirme com `git status` que `raw-assets/` não aparece como staged nem
+tracked antes de commitar.
+
+---
+
+### Task 13: Carregador do modelo real do goleiro (mergulho)
+
+**Files:**
+- Create: `app/game/engine3d/keeperDiveModel.ts`
+
+**Interfaces:**
+- Consumes: `AnimationMixer`, `LoopOnce`, `Group` de `three`; `GLTFLoader`, `GLTF` de `three/examples/jsm/loaders/GLTFLoader.js`; `MeshoptDecoder` de `three/examples/jsm/libs/meshopt_decoder.module.js`; o arquivo `public/models/goalkeeper-dive.glb` da Task 12.
+- Produces: `KeeperDiveModel` (interface), `KEEPER_DIVE_NATURAL_SIDE` (constante ajustável), `loadKeeperDiveModel(): Promise<KeeperDiveModel | null>` — usado pela Task 14 (orquestrador).
+
+- [ ] **Step 1: Implementar**
+
+Crie `app/game/engine3d/keeperDiveModel.ts`:
+
+```ts
+import { AnimationMixer, LoopOnce, type Group } from 'three'
+import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
+
+export interface KeeperDiveModel {
+  object3D: Group
+  /**
+   * Toca a animacao do zero, ajustando a velocidade para caber em
+   * `targetDurationSeconds` (o clipe original dura mais do que a janela de
+   * tempo do lance). `mirror` espelha o modelo no eixo X para cobrir o lado
+   * oposto ao gravado originalmente.
+   */
+  play(mirror: boolean, targetDurationSeconds: number): void
+  update(deltaSeconds: number): void
+}
+
+const DIVE_MODEL_URL = './models/goalkeeper-dive.glb'
+
+/**
+ * Lado para o qual a animacao original mergulha. Ajustar aqui (sem tocar em
+ * outro arquivo) se a verificacao manual (Task 15) mostrar que o mergulho
+ * "esquerda" do jogo esta saindo espelhado para o lado errado.
+ */
+export const KEEPER_DIVE_NATURAL_SIDE: 'left' | 'right' = 'right'
+
+/**
+ * Carrega o modelo real do goleiro mergulhando (asset fornecido pelo
+ * usuario, comprimido na Task 12). Usado apenas durante as fases de voo e
+ * pos-impacto do chute — o goleiro procedural (Tasks 6/7) continua sendo
+ * usado em todas as outras fases (idle etc.); o batedor nao e afetado.
+ * Retorna `null` se o arquivo nao carregar (caminho errado, arquivo
+ * ausente) — quem chama deve manter o goleiro procedural nesse caso.
+ */
+export async function loadKeeperDiveModel(): Promise<KeeperDiveModel | null> {
+  const loader = new GLTFLoader()
+  loader.setMeshoptDecoder(MeshoptDecoder)
+
+  const gltf = await new Promise<GLTF | null>((resolve) => {
+    loader.load(DIVE_MODEL_URL, resolve, undefined, () => resolve(null))
+  })
+  if (!gltf) return null
+
+  const clip = gltf.animations[0]
+  if (!clip) return null
+
+  const mixer = new AnimationMixer(gltf.scene)
+  const action = mixer.clipAction(clip)
+  action.clampWhenFinished = true
+  action.setLoop(LoopOnce, 1)
+
+  return {
+    object3D: gltf.scene,
+    play(mirror, targetDurationSeconds) {
+      gltf.scene.scale.x = mirror ? -1 : 1
+      action.timeScale = clip.duration / targetDurationSeconds
+      action.reset().play()
+    },
+    update(deltaSeconds) {
+      mixer.update(deltaSeconds)
+    }
+  }
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add app/game/engine3d/keeperDiveModel.ts
+git commit --no-gpg-sign -m "feat: adiciona carregador do modelo real do goleiro mergulhando"
+```
+
+---
+
+### Task 14: Orquestrador `PenaltyEngine3D`
 
 **Files:**
 - Create: `app/game/engine3d/penaltyEngine3d.ts`
 
 **Interfaces:**
-- Consumes: todos os módulos das Tasks 2–11 (`computeWorldLayout`, `decideShot`, `ballFlightPosition`/`arcHeight`, `netDisplacement`, `createCharacter`, `buildCrowdBillboard`, `buildBallMesh`, `buildNetMesh`, `buildCameraRig`, `screenToAim`), `EngineCallbacks`/`EngineState`/`ShotOutcome`/`Vec2` de `../types`.
-- Produces: classe `PenaltyEngine3D` com a **mesma interface pública** de `PenaltyEngine` (`constructor(canvas, callbacks)`, `reset()`, `destroy()`, `state`) — usada pela Task 13 (`PenaltyGame.client.vue`).
+- Consumes: todos os módulos das Tasks 2–13 (`computeWorldLayout`, `decideShot`, `ballFlightPosition`/`arcHeight`, `netDisplacement`, `createCharacter`, `buildCrowdBillboard`, `buildBallMesh`, `buildNetMesh`, `buildCameraRig`, `screenToAim`, `loadKeeperDiveModel`/`KEEPER_DIVE_NATURAL_SIDE`), `EngineCallbacks`/`EngineState`/`ShotOutcome`/`Vec2` de `../types`.
+- Produces: classe `PenaltyEngine3D` com a **mesma interface pública** de `PenaltyEngine` (`constructor(canvas, callbacks)`, `reset()`, `destroy()`, `state`) — usada pela Task 15 (`PenaltyGame.client.vue`).
 
 - [ ] **Step 1: Implementar**
 
@@ -1257,6 +1409,7 @@ import { buildNetMesh, type NetMesh } from './netMesh'
 import type { Ripple } from './netRipple'
 import { screenToAim } from './aimInput'
 import { clampAim, computeWorldLayout, type WorldLayout } from './worldGeometry'
+import { KEEPER_DIVE_NATURAL_SIDE, loadKeeperDiveModel, type KeeperDiveModel } from './keeperDiveModel'
 
 const TIMINGS = { runup: 0.72, strike: 0.16, flight: 0.5, aftermath: 1.35 }
 
@@ -1292,6 +1445,8 @@ export class PenaltyEngine3D {
   private crowd: CrowdBillboard
   private kicker: Character
   private keeper: Character
+  private keeperDiveModel: KeeperDiveModel | null = null
+  private diveModelActive = false
 
   private resizeObserver: ResizeObserver | null = null
 
@@ -1331,6 +1486,8 @@ export class PenaltyEngine3D {
     this.keeper.object3D.position.set(0, 0, this.layout.goalLineZ - 0.1)
     this.scene.add(this.keeper.object3D)
 
+    void this.loadDiveModelAsync()
+
     this.handleResize()
     this.resizeObserver = new ResizeObserver(() => this.handleResize())
     this.resizeObserver.observe(canvas.parentElement ?? canvas)
@@ -1341,6 +1498,10 @@ export class PenaltyEngine3D {
 
     this.stateStart = this.clock.getElapsedTime()
     this.raf = requestAnimationFrame(this.frame)
+  }
+
+  private async loadDiveModelAsync() {
+    this.keeperDiveModel = await loadKeeperDiveModel()
   }
 
   destroy() {
@@ -1360,6 +1521,11 @@ export class PenaltyEngine3D {
     this.resultSent = false
     this.ripples = []
     this.ballPos = { ...this.ballStart }
+    if (this.diveModelActive && this.keeperDiveModel) {
+      this.scene.remove(this.keeperDiveModel.object3D)
+      this.scene.add(this.keeper.object3D)
+      this.diveModelActive = false
+    }
   }
 
   // ------------------------------------------------------------------
@@ -1448,11 +1614,27 @@ export class PenaltyEngine3D {
         const height = arcHeight(this.shotTarget.y, this.layout.goalHeight)
         this.ballPos = ballFlightPosition(this.ballStart, this.ballEnd, ft, height)
         const divePhase = this.diveTarget.x < -0.3 ? 'diveLeft' : this.diveTarget.x > 0.3 ? 'diveRight' : 'diveCenter'
-        this.keeper.update(divePhase, ft, delta)
+
+        if (this.keeperDiveModel && !this.diveModelActive) {
+          this.diveModelActive = true
+          this.scene.remove(this.keeper.object3D)
+          this.keeperDiveModel.object3D.position.copy(this.keeper.object3D.position)
+          this.scene.add(this.keeperDiveModel.object3D)
+          // Fase que precisa de espelhamento: a oposta ao lado natural do clipe gravado.
+          const mirrorPhase = KEEPER_DIVE_NATURAL_SIDE === 'left' ? 'diveRight' : 'diveLeft'
+          this.keeperDiveModel.play(divePhase === mirrorPhase, TIMINGS.flight + TIMINGS.aftermath)
+        }
+        if (this.diveModelActive) {
+          this.keeperDiveModel!.update(delta)
+        } else {
+          this.keeper.update(divePhase, ft, delta)
+        }
+
         if (ft >= 1) this.onBallArrive(now)
         break
       }
       case 'aftermath':
+        if (this.diveModelActive) this.keeperDiveModel!.update(delta)
         if (t >= TIMINGS.aftermath) {
           if (!this.resultSent) {
             this.resultSent = true
@@ -1507,7 +1689,7 @@ git commit --no-gpg-sign -m "feat: adiciona orquestrador PenaltyEngine3D"
 
 ---
 
-### Task 13: Integração em `PenaltyGame.client.vue` e verificação manual
+### Task 15: Integração em `PenaltyGame.client.vue` e verificação manual
 
 **Files:**
 - Modify: `app/components/PenaltyGame.client.vue:1-2` (imports) e `app/components/PenaltyGame.client.vue:72-81` (`onMounted`)
@@ -1566,6 +1748,9 @@ Abra o jogo no navegador (preview) e confirme, em ordem:
 5. Um chute mirado fora dos limites do gol resulta em `out`.
 6. Redimensionar a janela (ou girar o dispositivo simulando retrato/paisagem) não quebra a câmera nem corta a cena.
 7. Sem quedas de frame perceptíveis (checar o painel de performance do navegador) em condições comparáveis a um Android de entrada (throttling de CPU 4x no Chrome DevTools).
+8. **Modelo real do goleiro**: no momento do mergulho (fases `flight`/`aftermath`), o modelo real (Task 13) aparece no lugar do procedural, sem popping visível, com escala/orientação corretas (tamanho humano, em pé sobre o gramado, não flutuando nem afundado). Se a escala/orientação estiver errada, ajustar em `keeperDiveModel.ts` (escala uniforme ou offset de posição) e testar de novo.
+9. **Lado do mergulho**: chute mirado à esquerda faz o modelo real mergulhar para a esquerda (e à direita, para a direita) — se estiver invertido, trocar `KEEPER_DIVE_NATURAL_SIDE` em `keeperDiveModel.ts` (Task 13) e testar de novo.
+10. Fora do mergulho (parado, corrida do batedor), o goleiro procedural continua aparecendo normalmente — o modelo real não deve "vazar" para essas fases.
 
 - [ ] **Step 5: Commit**
 
@@ -1576,7 +1761,7 @@ git commit --no-gpg-sign -m "feat: troca o motor grafico do jogo de Canvas 2D pa
 
 ---
 
-### Task 14: Remoção do motor 2D antigo
+### Task 16: Remoção do motor 2D antigo
 
 **Files:**
 - Delete: `app/game/engine.ts`
@@ -1584,7 +1769,7 @@ git commit --no-gpg-sign -m "feat: troca o motor grafico do jogo de Canvas 2D pa
 - [ ] **Step 1: Confirmar que nada mais importa `app/game/engine.ts`**
 
 Run: `grep -rn "from '~/game/engine'" app/ ; grep -rn "from '\.\./game/engine'" app/`
-Expected: nenhuma ocorrência (a Task 13 já trocou o único import existente).
+Expected: nenhuma ocorrência (a Task 15 já trocou o único import existente).
 
 - [ ] **Step 2: Remover o arquivo**
 
@@ -1605,6 +1790,8 @@ git commit --no-gpg-sign -m "chore: remove o motor grafico 2D substituido pelo P
 
 ## Notas para quem for executar
 
-- Personagens são 100% procedurais (Tasks 6/7) — não há tentativa de download de asset externo nem dependência de rede para a camada de personagens. Pesquisa prévia confirmou que não existe pacote gratuito de jogador+goleiro riggado com chute/mergulho.
+- Personagens são procedurais por padrão (Tasks 6/7) — pesquisa prévia confirmou que não existe pacote gratuito de jogador+goleiro riggado com chute/mergulho pronto para download. A exceção é o goleiro mergulhando: o usuário conseguiu e forneceu um `.glb` real (Tasks 12/13), usado só nas fases de voo/pós-impacto.
+- O `.glb` bruto do goleiro (10.6MB) **nunca deve ser commitado** — só a versão otimizada (`public/models/goalkeeper-dive.glb`, meta ~500KB-1MB) gerada pela Task 12. Se o usuário fornecer mais assets no futuro (batedor correndo/chutando, mais variações do goleiro), o mesmo padrão se aplica: pasta `raw-assets/` (gitignorada) para o bruto, `gltf-transform optimize` para gerar a versão final em `public/models/`.
 - Todos os commits usam `git commit --no-gpg-sign` (ver Global Constraints) — não remover a flag nem tentar reabilitar assinatura sem checar com o usuário primeiro.
-- A Task 12 é a maior e mais arriscada — se o Code Reviewer (ou o próprio executor) achar que ficou grande demais para revisar de uma vez, é aceitável quebrá-la em duas entregas (ex: estado + input primeiro, integração de cena visual depois), desde que o teste manual da Task 13 só rode no final.
+- A Task 14 é a maior e mais arriscada — se o Code Reviewer (ou o próprio executor) achar que ficou grande demais para revisar de uma vez, é aceitável quebrá-la em duas entregas (ex: estado + input primeiro, integração de cena visual/modelo real depois), desde que o teste manual da Task 15 só rode no final.
+- O lado do mergulho (`KEEPER_DIVE_NATURAL_SIDE` em `keeperDiveModel.ts`, Task 13) é um palpite até a verificação visual da Task 15 confirmar — não é um bug se precisar ser ajustado nessa etapa.
