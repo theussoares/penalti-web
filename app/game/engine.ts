@@ -1331,216 +1331,367 @@ export class PenaltyEngine {
     return { pos: start, runP: 0, kickP: 0 }
   }
 
-  /** Batedor: camisa amarela com gola e punhos verdes, calcao azul com friso. Vista de costas em tres quartos. */
+  /**
+   * Batedor com anatomia humanizada: membros afunilados com volume muscular,
+   * joelhos e cotovelos resolvidos por IK de dois ossos, deltoides, tronco em
+   * formato de costas, chuteiras modeladas e cabeca com silhueta de cabelo.
+   * Camisa amarela com detalhes verdes, calcao azul. Vista de costas.
+   */
   private drawKicker(ctx: CanvasRenderingContext2D) {
     const L = this.layout
     const { pos, runP, kickP } = this.kickerAnchor()
-    const h = L.kickerH
-    const u = h / 7
+    const u = L.kickerH / 7
 
     const skin = '#8a5a3b'
     const skinHi = '#a5714b'
-    const skinSh = '#66412a'
+    const skinSh = '#61402a'
     const shirt = '#ffd23f'
     const shirtHi = '#ffe37a'
-    const shirtSh = '#dba418'
+    const shirtSh = '#d9a015'
     const trim = '#127a45'
     const shorts = '#1f4fd0'
-    const shortsSh = '#153a9e'
+    const shortsHi = '#3f6ae8'
+    const shortsSh = '#132f86'
     const sock = '#1f4fd0'
     const sockHi = '#3f6ae8'
     const sockSh = '#12308c'
-    const boot = '#15181f'
-    const bootHi = '#333a4c'
-    const hair = '#241509'
-    const hairHi = '#3d2712'
+    const bootC = '#15181f'
+    const bootHi = '#3a4152'
+    const hairC = '#241509'
+    const hairHi = '#412a13'
+
+    // Membro afunilado com barriga muscular e sombreamento cilindrico
+    const muscle = (
+      a: Vec, b: Vec, wa: number, wb: number, bulge: number,
+      hi: string, base: string, sh: string
+    ) => {
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const len = Math.hypot(dx, dy) || 1
+      const th = Math.atan2(dy, dx)
+      const nx = -dy / len
+      const ny = dx / len
+      const midW = Math.max(wa, wb) / 2 + bulge
+      const m1: Vec = { x: a.x + dx * 0.42 + nx * midW, y: a.y + dy * 0.42 + ny * midW }
+      const m2: Vec = { x: a.x + dx * 0.42 - nx * midW, y: a.y + dy * 0.42 - ny * midW }
+      const g = ctx.createLinearGradient(a.x + nx * midW, a.y + ny * midW, a.x - nx * midW, a.y - ny * midW)
+      g.addColorStop(0, hi)
+      g.addColorStop(0.55, base)
+      g.addColorStop(1, sh)
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.arc(a.x, a.y, wa / 2, th + Math.PI / 2, th - Math.PI / 2)
+      ctx.quadraticCurveTo(m2.x, m2.y, b.x - nx * (wb / 2), b.y - ny * (wb / 2))
+      ctx.arc(b.x, b.y, wb / 2, th - Math.PI / 2, th + Math.PI / 2)
+      ctx.quadraticCurveTo(m1.x, m1.y, a.x + nx * (wa / 2), a.y + ny * (wa / 2))
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    // IK de dois ossos: posicao do joelho/cotovelo dado quadril/ombro e tornozelo/mao
+    const solveJoint = (root: Vec, end: Vec, l1: number, l2: number, sign: number): Vec => {
+      let dx = end.x - root.x
+      let dy = end.y - root.y
+      let d = Math.hypot(dx, dy) || 0.0001
+      const maxD = (l1 + l2) * 0.995
+      if (d > maxD) {
+        dx *= maxD / d
+        dy *= maxD / d
+        d = maxD
+      }
+      const proj = (d * d + l1 * l1 - l2 * l2) / (2 * d)
+      const h = Math.sqrt(Math.max(l1 * l1 - proj * proj, 0.0001))
+      return {
+        x: root.x + (dx * proj) / d + ((-dy / d) * h) * sign,
+        y: root.y + (dy * proj) / d + ((dx / d) * h) * sign
+      }
+    }
 
     ctx.save()
     ctx.translate(pos.x, pos.y)
 
-    // Sombra do jogador
+    // Sombra de contato
     ctx.fillStyle = 'rgba(8,30,14,0.35)'
     ctx.beginPath()
-    ctx.ellipse(u * 0.2, u * 3.5, u * 1.7, u * 0.5, 0, 0, TAU)
+    ctx.ellipse(u * 0.2, u * 3.5, u * 1.7, u * 0.48, 0, 0, TAU)
     ctx.fill()
 
     const running = this.state === 'runup'
     const stepPhase = runP * Math.PI * 2 * 3.2
     const legSwing = running ? Math.sin(stepPhase) : 0
-    const idleBreath = this.state === 'ready' || this.state === 'aiming' ? Math.sin(this.now * 1.8) * u * 0.06 : 0
+    const idle = this.state === 'ready' || this.state === 'aiming'
+    const breath = idle ? Math.sin(this.now * 1.8) * u * 0.05 : 0
+    const swing = kickP > 0 ? easeOutCubic(kickP) : 0
 
-    // Quadris
-    const lHip: Vec = { x: -u * 0.38, y: u * 0.92 }
-    const rHip: Vec = { x: u * 0.38, y: u * 0.92 }
-
-    // Pes
-    let lFoot: Vec = { x: lHip.x - u * 0.26 + (running ? legSwing * u * 0.92 : 0), y: u * 3.38 }
-    let rFoot: Vec = { x: rHip.x + u * 0.26 - (running ? legSwing * u * 0.92 : 0), y: u * 3.38 }
-    let rKnee: Vec | null = null
-
-    if (kickP > 0) {
-      // Balanco da perna do chute: de tras (armada) para frente estendida, com joelho dobrando
-      const swing = easeOutCubic(kickP)
-      const ang = lerp(Math.PI * 0.78, -Math.PI * 0.28, swing)
-      const len = u * 2.5
-      rFoot = {
-        x: rHip.x + Math.cos(ang + Math.PI / 2) * len * 0.9,
-        y: rHip.y + Math.sin(ang + Math.PI / 2) * len
-      }
-      const bend = lerp(0.85, 0.12, swing)
-      rKnee = {
-        x: rHip.x + Math.cos(ang + bend + Math.PI / 2) * len * 0.52,
-        y: rHip.y + Math.sin(ang + bend + Math.PI / 2) * len * 0.52
-      }
-      lFoot = { x: lHip.x - u * 0.32, y: u * 3.38 }
-    }
-
-    // Tronco inclina no chute
-    const lean = kickP > 0 ? lerp(0.06, -0.22, easeOutCubic(kickP)) : running ? 0.12 : 0.02
+    // Tronco inclina: leve na espera, para frente na corrida, chicote no chute
+    const lean = kickP > 0 ? lerp(0.1, -0.24, swing) : running ? 0.14 : 0.03
     ctx.rotate(lean)
 
-    // Perna completa: coxa/panturrilha de pele, meiao com punho amarelo, chuteira com sola
-    const drawLeg = (hip: Vec, foot: Vec, knee: Vec | null, bootDir: number) => {
-      const k = knee ?? {
-        x: lerp(hip.x, foot.x, 0.5) + bootDir * u * 0.1,
-        y: lerp(hip.y, foot.y, 0.52)
+    const hipL: Vec = { x: -u * 0.42, y: u * 0.95 }
+    const hipR: Vec = { x: u * 0.42, y: u * 0.95 }
+    const thighLen = u * 1.28
+    const shinLen = u * 1.22
+
+    // Tornozelos
+    let ankleL: Vec = { x: hipL.x - u * 0.18 + (running ? legSwing * u * 0.85 : 0), y: u * 3.32 }
+    let ankleR: Vec = { x: hipR.x + u * 0.18 - (running ? legSwing * u * 0.85 : 0), y: u * 3.32 }
+    if (running) {
+      // Levantar o pe que esta atras (corrida com calcanhar subindo)
+      ankleL.y -= Math.max(0, -legSwing) * u * 0.75
+      ankleR.y -= Math.max(0, legSwing) * u * 0.75
+    }
+    let footAngR = 0
+    if (kickP > 0) {
+      const ang = lerp(Math.PI * 0.8, -Math.PI * 0.3, swing)
+      const reach = (thighLen + shinLen) * 0.92
+      ankleR = {
+        x: hipR.x + Math.cos(ang + Math.PI / 2) * reach * 0.88,
+        y: hipR.y + Math.sin(ang + Math.PI / 2) * reach
       }
-      const sockTop: Vec = { x: lerp(k.x, foot.x, 0.4), y: lerp(k.y, foot.y, 0.4) }
-      const ankle: Vec = { x: lerp(k.x, foot.x, 0.96), y: lerp(k.y, foot.y, 0.96) }
-      this.limbShaded(ctx, hip.x, hip.y, k.x, k.y, u * 0.66, skinHi, skin, skinSh)
-      this.limbShaded(ctx, k.x, k.y, sockTop.x, sockTop.y, u * 0.56, skinHi, skin, skinSh)
-      this.limbShaded(ctx, sockTop.x, sockTop.y, ankle.x, ankle.y, u * 0.52, sockHi, sock, sockSh)
+      footAngR = lerp(0.9, -0.55, swing)
+      ankleL = { x: hipL.x - u * 0.34, y: u * 3.32 }
+    }
+
+    // Chuteira modelada: calcanhar, sola e bico
+    const bootShape = (ankle: Vec, dir: number, angle: number) => {
+      ctx.save()
+      ctx.translate(ankle.x, ankle.y + u * 0.08)
+      ctx.rotate(angle)
+      const g = ctx.createLinearGradient(0, -u * 0.18, 0, u * 0.2)
+      g.addColorStop(0, bootHi)
+      g.addColorStop(0.5, bootC)
+      g.addColorStop(1, '#06080c')
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.moveTo(-dir * u * 0.28, -u * 0.14)
+      ctx.quadraticCurveTo(-dir * u * 0.36, u * 0.08, -dir * u * 0.24, u * 0.16)
+      ctx.lineTo(dir * u * 0.4, u * 0.17)
+      ctx.quadraticCurveTo(dir * u * 0.62, u * 0.15, dir * u * 0.58, u * 0.02)
+      ctx.quadraticCurveTo(dir * u * 0.5, -u * 0.12, dir * u * 0.16, -u * 0.16)
+      ctx.closePath()
+      ctx.fill()
+      // Sola
+      ctx.strokeStyle = '#dfe5ee'
+      ctx.lineWidth = u * 0.055
+      ctx.beginPath()
+      ctx.moveTo(-dir * u * 0.26, u * 0.185)
+      ctx.lineTo(dir * u * 0.46, u * 0.19)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // Perna completa: coxa com volume, panturrilha com barriga, meiao e chuteira
+    const drawLeg = (hip: Vec, ankle: Vec, kneeSign: number, bootDir: number, bootAng: number) => {
+      const knee = solveJoint(hip, ankle, thighLen, shinLen, kneeSign)
+      const sockTop: Vec = { x: lerp(knee.x, ankle.x, 0.32), y: lerp(knee.y, ankle.y, 0.32) }
+      // Coxa: larga no quadril, estreita no joelho
+      muscle(hip, knee, u * 0.72, u * 0.44, u * 0.05, skinHi, skin, skinSh)
+      // Joelho
+      ctx.fillStyle = skin
+      ctx.beginPath()
+      ctx.arc(knee.x, knee.y, u * 0.22, 0, TAU)
+      ctx.fill()
+      // Panturrilha nua ate o meiao
+      muscle(knee, sockTop, u * 0.42, u * 0.4, u * 0.03, skinHi, skin, skinSh)
+      // Meiao com barriga da panturrilha
+      muscle(sockTop, ankle, u * 0.46, u * 0.28, u * 0.09, sockHi, sock, sockSh)
       // Punho amarelo do meiao
-      this.limb(
-        ctx,
-        sockTop.x, sockTop.y,
-        lerp(sockTop.x, ankle.x, 0.16), lerp(sockTop.y, ankle.y, 0.16),
-        u * 0.54, shirt
-      )
-      // Chuteira com sola clara
-      this.limbShaded(ctx, ankle.x, ankle.y, ankle.x + bootDir * u * 0.5, ankle.y + u * 0.12, u * 0.44, bootHi, boot, '#07090e')
-      this.limb(ctx, ankle.x + bootDir * u * 0.02, ankle.y + u * 0.24, ankle.x + bootDir * u * 0.5, ankle.y + u * 0.3, u * 0.09, '#dfe5ee')
+      this.limb(ctx, sockTop.x, sockTop.y, lerp(sockTop.x, ankle.x, 0.14), lerp(sockTop.y, ankle.y, 0.14), u * 0.42, shirt)
+      bootShape(ankle, bootDir, bootAng)
     }
 
     // Perna de apoio (esquerda) atras do calcao
-    drawLeg(lHip, lFoot, null, -1)
+    drawLeg(hipL, ankleL, -1, -1, running ? -legSwing * 0.3 : -0.06)
 
-    // Calcao azul com sombreamento e frisos amarelos laterais
+    // Calcao azul: pelvis com abertura das pernas e frisos
     const shortsGrad = ctx.createLinearGradient(-u, 0, u, 0)
-    shortsGrad.addColorStop(0, '#2f5fe0')
+    shortsGrad.addColorStop(0, shortsHi)
     shortsGrad.addColorStop(0.5, shorts)
     shortsGrad.addColorStop(1, shortsSh)
     ctx.fillStyle = shortsGrad
     ctx.beginPath()
-    ctx.moveTo(-u * 0.95, u * 0.15)
-    ctx.lineTo(u * 0.95, u * 0.15)
-    ctx.lineTo(u * 1.08, u * 1.38)
-    ctx.lineTo(u * 0.25, u * 1.52)
-    ctx.lineTo(0, u * 1.12)
-    ctx.lineTo(-u * 0.25, u * 1.52)
-    ctx.lineTo(-u * 1.08, u * 1.38)
+    ctx.moveTo(-u * 0.88, u * 0.1)
+    ctx.lineTo(u * 0.88, u * 0.1)
+    ctx.quadraticCurveTo(u * 1.06, u * 0.75, u * 1.0, u * 1.34)
+    ctx.quadraticCurveTo(u * 0.66, u * 1.5, u * 0.3, u * 1.44)
+    ctx.quadraticCurveTo(u * 0.1, u * 1.1, 0, u * 1.08)
+    ctx.quadraticCurveTo(-u * 0.1, u * 1.1, -u * 0.3, u * 1.44)
+    ctx.quadraticCurveTo(-u * 0.66, u * 1.5, -u * 1.0, u * 1.34)
+    ctx.quadraticCurveTo(-u * 1.06, u * 0.75, -u * 0.88, u * 0.1)
     ctx.closePath()
     ctx.fill()
+    // Sombra da barra das pernas do calcao
+    ctx.strokeStyle = 'rgba(6,16,50,0.5)'
+    ctx.lineWidth = u * 0.06
+    ctx.beginPath()
+    ctx.moveTo(-u * 0.94, u * 1.3)
+    ctx.quadraticCurveTo(-u * 0.6, u * 1.44, -u * 0.32, u * 1.4)
+    ctx.moveTo(u * 0.94, u * 1.3)
+    ctx.quadraticCurveTo(u * 0.6, u * 1.44, u * 0.32, u * 1.4)
+    ctx.stroke()
+    // Frisos amarelos laterais
     ctx.strokeStyle = shirt
     ctx.lineWidth = u * 0.07
     ctx.beginPath()
-    ctx.moveTo(-u * 0.97, u * 0.22)
-    ctx.lineTo(-u * 1.06, u * 1.32)
-    ctx.moveTo(u * 0.97, u * 0.22)
-    ctx.lineTo(u * 1.06, u * 1.32)
+    ctx.moveTo(-u * 0.9, u * 0.18)
+    ctx.quadraticCurveTo(-u * 1.02, u * 0.75, -u * 0.97, u * 1.26)
+    ctx.moveTo(u * 0.9, u * 0.18)
+    ctx.quadraticCurveTo(u * 1.02, u * 0.75, u * 0.97, u * 1.26)
     ctx.stroke()
 
     // Perna do chute (direita) por cima do calcao
-    drawLeg(rHip, rFoot, rKnee, 1)
+    drawLeg(hipR, ankleR, kickP > 0 ? (swing < 0.4 ? 1 : -1) : -1, 1, kickP > 0 ? footAngR : running ? legSwing * 0.3 : 0.06)
 
-    // Camisa amarela com sombreamento (vista de costas)
+    // Tronco: costas com ombros largos, latissimo afunilando para a cintura
     const shirtGrad = ctx.createLinearGradient(-u * 1.1, 0, u * 1.1, 0)
     shirtGrad.addColorStop(0, shirtHi)
     shirtGrad.addColorStop(0.45, shirt)
     shirtGrad.addColorStop(1, shirtSh)
     ctx.fillStyle = shirtGrad
     ctx.beginPath()
-    ctx.moveTo(-u * 1.1, -u * 2.08)
-    ctx.quadraticCurveTo(0, -u * 2.45, u * 1.1, -u * 2.08)
-    ctx.quadraticCurveTo(u * 1.16, -u * 1.2, u * 1.0, u * 0.35)
-    ctx.quadraticCurveTo(0, u * 0.62, -u * 1.0, u * 0.35)
-    ctx.quadraticCurveTo(-u * 1.16, -u * 1.2, -u * 1.1, -u * 2.08)
+    ctx.moveTo(-u * 0.5, -u * 2.32)
+    ctx.quadraticCurveTo(-u * 1.02, -u * 2.28, -u * 1.12, -u * 1.78)
+    ctx.quadraticCurveTo(-u * 1.08, -u * 0.6, -u * 0.86, u * 0.42)
+    ctx.quadraticCurveTo(0, u * 0.66, u * 0.86, u * 0.42)
+    ctx.quadraticCurveTo(u * 1.08, -u * 0.6, u * 1.12, -u * 1.78)
+    ctx.quadraticCurveTo(u * 1.02, -u * 2.28, u * 0.5, -u * 2.32)
+    ctx.quadraticCurveTo(0, -u * 2.2, -u * 0.5, -u * 2.32)
     ctx.closePath()
     ctx.fill()
-    // Costura central e barra da camisa
-    ctx.strokeStyle = 'rgba(120,80,0,0.18)'
+    // Sombra da coluna e escapulas
+    ctx.strokeStyle = 'rgba(120,80,0,0.22)'
     ctx.lineWidth = u * 0.05
     ctx.beginPath()
-    ctx.moveTo(0, -u * 2.3)
-    ctx.lineTo(0, u * 0.5)
+    ctx.moveTo(0, -u * 2.1)
+    ctx.lineTo(0, u * 0.44)
+    ctx.moveTo(-u * 0.55, -u * 1.86)
+    ctx.quadraticCurveTo(-u * 0.3, -u * 1.6, -u * 0.5, -u * 1.3)
+    ctx.moveTo(u * 0.55, -u * 1.86)
+    ctx.quadraticCurveTo(u * 0.3, -u * 1.6, u * 0.5, -u * 1.3)
     ctx.stroke()
+    // Barra da camisa com faixa verde
     ctx.strokeStyle = trim
     ctx.lineWidth = u * 0.09
     ctx.beginPath()
-    ctx.moveTo(-u * 0.98, u * 0.38)
-    ctx.quadraticCurveTo(0, u * 0.64, u * 0.98, u * 0.38)
-    ctx.stroke()
-    // Gola verde
-    ctx.strokeStyle = trim
-    ctx.lineWidth = u * 0.14
-    ctx.beginPath()
-    ctx.moveTo(-u * 0.46, -u * 2.22)
-    ctx.quadraticCurveTo(0, -u * 2.42, u * 0.46, -u * 2.22)
+    ctx.moveTo(-u * 0.84, u * 0.46)
+    ctx.quadraticCurveTo(0, u * 0.7, u * 0.84, u * 0.46)
     ctx.stroke()
     // Numero 9 com contorno
-    ctx.font = `800 ${u * 1.15}px 'Segoe UI', sans-serif`
+    ctx.font = `800 ${u * 1.1}px 'Segoe UI', sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.lineWidth = u * 0.16
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)'
-    ctx.strokeText('9', 0, -u * 0.82)
+    ctx.lineWidth = u * 0.15
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+    ctx.strokeText('9', 0, -u * 0.8)
     ctx.fillStyle = '#12326e'
-    ctx.fillText('9', 0, -u * 0.82)
+    ctx.fillText('9', 0, -u * 0.8)
 
-    // Bracos em dois segmentos: manga amarela + antebraco de pele + mao
-    const armSwing = running
-      ? Math.sin(stepPhase + Math.PI) * u * 0.7
-      : kickP > 0
-        ? lerp(u * 0.3, -u * 0.8, easeOutCubic(kickP))
-        : idleBreath * 3
-    const drawArm = (side: number, swingVal: number) => {
-      const shoulder: Vec = { x: side * u * 0.95, y: -u * 1.72 }
-      const elbow: Vec = { x: side * u * 1.36, y: -u * 0.75 + swingVal * 0.55 }
-      const hand: Vec = { x: side * u * 1.58, y: u * 0.05 + swingVal }
-      this.limbShaded(ctx, shoulder.x, shoulder.y, elbow.x, elbow.y, u * 0.46, shirtHi, shirt, shirtSh)
-      // Punho verde da manga
-      this.limb(ctx, lerp(shoulder.x, elbow.x, 0.9), lerp(shoulder.y, elbow.y, 0.9), elbow.x, elbow.y, u * 0.36, trim)
-      this.limbShaded(ctx, elbow.x, elbow.y, hand.x, hand.y, u * 0.34, skinHi, skin, skinSh)
+    // Bracos com cotovelo por IK: manga, antebraco de pele e punho fechado
+    const upperLen = u * 1.05
+    const foreLen = u * 1.0
+    const drawArm = (side: number, hand: Vec, elbowSign: number) => {
+      const shoulder: Vec = { x: side * u * 0.98, y: -u * 1.98 }
+      const elbow = solveJoint(shoulder, hand, upperLen, foreLen, elbowSign)
+      // Deltoide
+      ctx.fillStyle = side < 0 ? shirtHi : shirtSh
+      ctx.beginPath()
+      ctx.arc(shoulder.x, shoulder.y + u * 0.05, u * 0.34, 0, TAU)
+      ctx.fill()
+      // Manga curta ate acima do cotovelo
+      const sleeveEnd: Vec = { x: lerp(shoulder.x, elbow.x, 0.62), y: lerp(shoulder.y, elbow.y, 0.62) }
+      muscle(shoulder, sleeveEnd, u * 0.52, u * 0.4, u * 0.02, shirtHi, shirt, shirtSh)
+      this.limb(ctx, lerp(shoulder.x, sleeveEnd.x, 0.85), lerp(shoulder.y, sleeveEnd.y, 0.85), sleeveEnd.x, sleeveEnd.y, u * 0.36, trim)
+      // Biceps/triceps de pele + antebraco afunilando ate o punho
+      muscle(sleeveEnd, elbow, u * 0.34, u * 0.28, u * 0.03, skinHi, skin, skinSh)
+      muscle(elbow, hand, u * 0.3, u * 0.18, u * 0.04, skinHi, skin, skinSh)
+      // Mao fechada
       ctx.fillStyle = skin
       ctx.beginPath()
-      ctx.arc(hand.x, hand.y, u * 0.26, 0, TAU)
+      ctx.ellipse(hand.x, hand.y, u * 0.2, u * 0.24, Math.atan2(hand.y - elbow.y, hand.x - elbow.x), 0, TAU)
+      ctx.fill()
+      ctx.fillStyle = skinSh
+      ctx.beginPath()
+      ctx.ellipse(hand.x, hand.y + u * 0.06, u * 0.15, u * 0.1, 0, 0, TAU)
       ctx.fill()
     }
-    drawArm(-1, armSwing)
-    drawArm(1, -armSwing)
 
-    // Pescoco e cabeca (vista de tras: cabelo dominante, orelhas nas laterais)
-    this.limbShaded(ctx, 0, -u * 2.28 + idleBreath, 0, -u * 2.5 + idleBreath, u * 0.34, skinHi, skin, skinSh)
-    ctx.fillStyle = skin
+    let handL: Vec
+    let handR: Vec
+    if (running) {
+      // Bracos bombeando dobrados a 90 graus
+      handL = { x: -u * (0.9 + Math.cos(stepPhase + Math.PI) * 0.25), y: -u * 0.7 + Math.sin(stepPhase + Math.PI) * u * 0.85 }
+      handR = { x: u * (0.9 + Math.cos(stepPhase) * 0.25), y: -u * 0.7 + Math.sin(stepPhase) * u * 0.85 }
+    } else if (kickP > 0) {
+      // Braco esquerdo abre para cima equilibrando, direito vai para tras
+      handL = { x: lerp(-u * 1.1, -u * 1.85, swing), y: lerp(u * 0.1, -u * 1.5, swing) }
+      handR = { x: lerp(u * 1.1, u * 1.5, swing), y: lerp(u * 0.1, u * 0.75, swing) }
+    } else {
+      handL = { x: -u * 1.08, y: u * 0.18 + breath * 2 }
+      handR = { x: u * 1.08, y: u * 0.18 + breath * 2 }
+    }
+    drawArm(-1, handL, -1)
+    drawArm(1, handR, 1)
+
+    // Pescoco com trapezio
+    const neckGrad = ctx.createLinearGradient(-u * 0.2, 0, u * 0.2, 0)
+    neckGrad.addColorStop(0, skinHi)
+    neckGrad.addColorStop(1, skinSh)
+    ctx.fillStyle = neckGrad
     ctx.beginPath()
-    ctx.arc(0, -u * 2.88 + idleBreath, u * 0.62, 0, TAU)
-    ctx.fill()
-    ctx.fillStyle = skinSh
-    ctx.beginPath()
-    ctx.arc(-u * 0.6, -u * 2.86 + idleBreath, u * 0.11, 0, TAU)
-    ctx.arc(u * 0.6, -u * 2.86 + idleBreath, u * 0.11, 0, TAU)
-    ctx.fill()
-    // Cabelo cobrindo a nuca, com brilho
-    ctx.fillStyle = hair
-    ctx.beginPath()
-    ctx.arc(0, -u * 2.92 + idleBreath, u * 0.61, Math.PI * 0.78, TAU * 1.11)
-    ctx.quadraticCurveTo(0, -u * 2.55 + idleBreath, -u * 0.57, -u * 2.7 + idleBreath)
+    ctx.moveTo(-u * 0.46, -u * 2.24)
+    ctx.quadraticCurveTo(-u * 0.2, -u * 2.42, -u * 0.19, -u * 2.62)
+    ctx.lineTo(u * 0.19, -u * 2.62)
+    ctx.quadraticCurveTo(u * 0.2, -u * 2.42, u * 0.46, -u * 2.24)
+    ctx.quadraticCurveTo(0, -u * 2.38, -u * 0.46, -u * 2.24)
     ctx.closePath()
     ctx.fill()
-    ctx.strokeStyle = hairHi
-    ctx.lineWidth = u * 0.07
+    // Gola verde
+    ctx.strokeStyle = trim
+    ctx.lineWidth = u * 0.11
     ctx.beginPath()
-    ctx.arc(0, -u * 2.92 + idleBreath, u * 0.48, Math.PI * 1.15, Math.PI * 1.6)
+    ctx.moveTo(-u * 0.42, -u * 2.28)
+    ctx.quadraticCurveTo(0, -u * 2.46, u * 0.42, -u * 2.28)
+    ctx.stroke()
+
+    // Cabeca: cranio levemente oval, orelhas, cabelo curto com linha da nuca
+    const headY = -u * 3.02 + breath
+    ctx.fillStyle = skin
+    ctx.beginPath()
+    ctx.ellipse(0, headY, u * 0.5, u * 0.56, 0, 0, TAU)
+    ctx.fill()
+    // Sombra do queixo/mandibula na base
+    ctx.fillStyle = skinSh
+    ctx.beginPath()
+    ctx.ellipse(0, headY + u * 0.34, u * 0.32, u * 0.18, 0, 0, Math.PI)
+    ctx.fill()
+    // Orelhas
+    for (const s of [-1, 1]) {
+      ctx.fillStyle = skin
+      ctx.beginPath()
+      ctx.ellipse(s * u * 0.5, headY + u * 0.05, u * 0.1, u * 0.15, 0, 0, TAU)
+      ctx.fill()
+      ctx.fillStyle = skinSh
+      ctx.beginPath()
+      ctx.ellipse(s * u * 0.5, headY + u * 0.05, u * 0.045, u * 0.08, 0, 0, TAU)
+      ctx.fill()
+    }
+    // Cabelo: coroa cheia com nuca em W suave
+    ctx.fillStyle = hairC
+    ctx.beginPath()
+    ctx.moveTo(-u * 0.52, headY + u * 0.1)
+    ctx.quadraticCurveTo(-u * 0.6, headY - u * 0.42, -u * 0.22, headY - u * 0.58)
+    ctx.quadraticCurveTo(0, headY - u * 0.66, u * 0.22, headY - u * 0.58)
+    ctx.quadraticCurveTo(u * 0.6, headY - u * 0.42, u * 0.52, headY + u * 0.1)
+    ctx.quadraticCurveTo(u * 0.34, headY + u * 0.3, u * 0.18, headY + u * 0.16)
+    ctx.quadraticCurveTo(0, headY + u * 0.28, -u * 0.18, headY + u * 0.16)
+    ctx.quadraticCurveTo(-u * 0.34, headY + u * 0.3, -u * 0.52, headY + u * 0.1)
+    ctx.closePath()
+    ctx.fill()
+    // Brilho do cabelo
+    ctx.strokeStyle = hairHi
+    ctx.lineWidth = u * 0.06
+    ctx.beginPath()
+    ctx.arc(0, headY - u * 0.08, u * 0.42, Math.PI * 1.12, Math.PI * 1.55)
     ctx.stroke()
 
     ctx.restore()
