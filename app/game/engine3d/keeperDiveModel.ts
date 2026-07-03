@@ -1,4 +1,4 @@
-import { AnimationMixer, LoopOnce, LoopRepeat, type AnimationAction, type Group } from 'three'
+import { AnimationMixer, AnimationUtils, LoopOnce, LoopPingPong, type AnimationAction, type Group } from 'three'
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import type { CharacterPhase } from './proceduralCharacter'
@@ -47,13 +47,19 @@ export async function loadKeeperDiveModel(): Promise<KeeperDiveModel | null> {
   const mixer = new AnimationMixer(gltf.scene)
   const actionsByClipName = new Map<string, AnimationAction>()
   for (const clip of gltf.animations) {
-    const action = mixer.clipAction(clip)
     if (clip.name === IDLE_CLIP_NAME) {
-      action.setLoop(LoopRepeat, Infinity)
-    } else {
-      action.clampWhenFinished = true
-      action.setLoop(LoopOnce, 1)
+      // O clipe base nao e um idle puro: a partir de ~1.5s o goleiro vai ao
+      // chao. Corta so o trecho inicial em pe e loopa em ping-pong para nao
+      // ter corte seco ao reiniciar.
+      const idleClip = AnimationUtils.subclip(clip, 'IdleLoop', 0, Math.floor(1.4 * 30), 30)
+      const action = mixer.clipAction(idleClip)
+      action.setLoop(LoopPingPong, Infinity)
+      actionsByClipName.set(clip.name, action)
+      continue
     }
+    const action = mixer.clipAction(clip)
+    action.clampWhenFinished = true
+    action.setLoop(LoopOnce, 1)
     actionsByClipName.set(clip.name, action)
   }
 
