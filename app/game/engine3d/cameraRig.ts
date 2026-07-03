@@ -7,8 +7,11 @@ export interface CameraRig {
   resize(aspect: number): void
 }
 
-const BASE_POSITION = new Vector3(0, 1.65, 13.5)
-const LOOK_AT_GOAL = new Vector3(0, 1.1, 0)
+// Elevada e bem atras da marca do penalti, olhando um pouco para baixo —
+// angulo que mostra o gramado (linhas da area, bola, batedor) e mantem o
+// batedor pequeno no rodape, como no enquadramento do motor 2D.
+const BASE_POSITION = new Vector3(0, 3.0, 18)
+const LOOK_AT_GOAL = new Vector3(0, 1.0, 0)
 
 /**
  * Camera estatica atras do batedor, sempre apontada para o gol — sem
@@ -16,7 +19,7 @@ const LOOK_AT_GOAL = new Vector3(0, 1.1, 0)
  * `update()` fica no shape da interface para nao mexer no orquestrador.
  */
 export function buildCameraRig(): CameraRig {
-  const camera = new PerspectiveCamera(52, 16 / 9, 0.1, 60)
+  const camera = new PerspectiveCamera(44, 16 / 9, 0.1, 60)
   camera.position.copy(BASE_POSITION)
   camera.lookAt(LOOK_AT_GOAL)
 

@@ -6,7 +6,11 @@ export interface CrowdBillboard {
   setExcitement(value: number, now: number): void
 }
 
-const ROWS = 26
+const ROWS = 22
+// Canvas largo (4:1) para casar com a proporcao da placa (~4.7:1) — canvas
+// quadrado esticado era o que deixava as figuras em elipses gigantes.
+const CANVAS_W = 2048
+const CANVAS_H = 512
 const CROWD_COLORS = [
   '#d8433b', '#e0e4ea', '#2e5fa3', '#e8b13f', '#43955f',
   '#8a4fa0', '#d97941', '#3fa3a0', '#c4cad4', '#a33b52'
@@ -51,11 +55,14 @@ export function buildCrowdBillboard(width: number, height: number): CrowdBillboa
 }
 
 function buildCrowdCanvas(variant: number): HTMLCanvasElement {
-  const size = 512
   const canvas = document.createElement('canvas')
-  canvas.width = size
-  canvas.height = size
+  canvas.width = CANVAS_W
+  canvas.height = CANVAS_H
   const ctx = canvas.getContext('2d')!
+
+  // Fundo escuro de arquibancada, para nao vazar preto puro entre as figuras.
+  ctx.fillStyle = '#141824'
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
 
   let rng = 12345
   const rand = () => {
@@ -65,10 +72,10 @@ function buildCrowdCanvas(variant: number): HTMLCanvasElement {
 
   for (let r = 0; r < ROWS; r++) {
     const t = r / (ROWS - 1)
-    const y = t * size
-    const bodySize = 6 + t * 6
+    const y = (t * CANVAS_H) + CANVAS_H / ROWS / 2
+    const bodySize = 7 + t * 4
     const step = bodySize * 2.1
-    for (let x = step / 2 + (r % 2) * step * 0.5; x < size; x += step) {
+    for (let x = step / 2 + (r % 2) * step * 0.5; x < CANVAS_W; x += step) {
       const bob = variant === 1 && rand() > 0.5 ? -bodySize * 0.45 : 0
       ctx.fillStyle = CROWD_COLORS[Math.floor(rand() * CROWD_COLORS.length)]!
       ctx.beginPath()
@@ -80,5 +87,11 @@ function buildCrowdCanvas(variant: number): HTMLCanvasElement {
       ctx.fill()
     }
   }
+
+  // Veu escuro por cima: arquibancada a meia-luz, como na arte 2D — a
+  // torcida ambienta sem competir com o gol e os jogadores.
+  ctx.fillStyle = 'rgba(10, 14, 26, 0.3)'
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+
   return canvas
 }

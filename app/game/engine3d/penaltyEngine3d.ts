@@ -2,8 +2,9 @@ import {
   AmbientLight,
   Clock,
   DirectionalLight,
-  Group,
+  Fog,
   Mesh,
+  Scene,
   WebGLRenderer
 } from 'three'
 import type { EngineCallbacks, EngineState, ShotOutcome, Vec2 } from '../types'
@@ -11,8 +12,11 @@ import type { Character } from './character'
 import { createCharacter } from './character'
 import { buildBallMesh } from './ballMesh'
 import { arcHeight, ballFlightPosition } from './ballFlight'
+import { buildAdBoards } from './adBoardMesh'
 import { buildCameraRig, type CameraRig } from './cameraRig'
 import { buildCrowdBillboard, type CrowdBillboard } from './crowdBillboard'
+import { buildGoalFrame } from './goalFrameMesh'
+import { buildGroundMesh } from './groundMesh'
 import { decideShot } from './goalkeeperAI'
 import { buildNetMesh, type NetMesh } from './netMesh'
 import type { Ripple } from './netRipple'
@@ -48,7 +52,7 @@ export class PenaltyEngine3D {
   private ripples: Ripple[] = []
   private resultSent = false
 
-  private scene = new Group()
+  private scene = new Scene()
   private ballMesh: Mesh
   private netMesh: NetMesh
   private crowd: CrowdBillboard
@@ -72,10 +76,20 @@ export class PenaltyEngine3D {
 
     this.cameraRig = buildCameraRig()
 
+    this.scene.fog = new Fog(0x000000, 15, 40)
+
     this.scene.add(new AmbientLight(0xffffff, 0.7))
     const sun = new DirectionalLight(0xfff2d0, 0.8)
     sun.position.set(-4, 8, 6)
     this.scene.add(sun)
+
+    this.scene.add(buildGroundMesh(this.layout, this.renderer.capabilities.getMaxAnisotropy()))
+    this.scene.add(buildGoalFrame(this.layout))
+
+    const sceneryWidth = this.layout.goalWidth * 4.5
+    const adBoards = buildAdBoards(sceneryWidth, 1.0)
+    adBoards.position.set(0, 0.55, this.layout.goalLineZ - this.layout.goalDepth - 0.6)
+    this.scene.add(adBoards)
 
     this.ballMesh = buildBallMesh(this.layout.ballRadius)
     this.scene.add(this.ballMesh)
@@ -83,12 +97,15 @@ export class PenaltyEngine3D {
     this.netMesh = buildNetMesh(this.layout)
     this.scene.add(this.netMesh.mesh)
 
-    this.crowd = buildCrowdBillboard(this.layout.goalWidth * 3, this.layout.goalHeight * 2.2)
-    this.crowd.mesh.position.set(0, this.layout.goalHeight * 1.1, this.layout.goalLineZ - this.layout.goalDepth - 0.5)
+    // Torcida como faixa de arquibancada acima das placas, atras do gol —
+    // nao mais um telao preenchendo a tela inteira. Acima dela sobra o ceu
+    // escuro do estadio.
+    this.crowd = buildCrowdBillboard(sceneryWidth, 5.5)
+    this.crowd.mesh.position.set(0, 1.0 + 2.75, this.layout.goalLineZ - this.layout.goalDepth - 1.6)
     this.scene.add(this.crowd.mesh)
 
     this.kicker = createCharacter('kicker')
-    this.kicker.object3D.position.set(-1.2, 0, this.layout.spotZ + 0.6)
+    this.kicker.object3D.position.set(-1.7, 0, this.layout.spotZ + 0.9)
     this.scene.add(this.kicker.object3D)
 
     this.keeper = createCharacter('keeper')

@@ -25,7 +25,7 @@ interface Joints {
 
 const PALETTE: Record<CharacterRole, { shirt: number; shorts: number; skin: number }> = {
   kicker: { shirt: 0xffd23f, shorts: 0x1f4fd0, skin: 0x8a5a3b },
-  keeper: { shirt: 0x17181d, shorts: 0x17181d, skin: 0xc98e63 }
+  keeper: { shirt: 0xff6a33, shorts: 0x22242b, skin: 0xc98e63 }
 }
 
 function limb(radius: number, length: number, color: number): Mesh {
