@@ -4,29 +4,24 @@
  * CONTRATO DA API (a implementar no backend):
  *
  *   GET {apiBase}/games
- *     -> { games: GameInfo[] }           lista de jogos disponiveis
+ *     -> { games: GameInfo[] }                        lista de jogos disponiveis
  *
- *   POST {apiBase}/games/{id}/play
- *     body: { outcome: 'goal' | 'save' | 'out' }
- *     -> { prize: Prize | null }         premio concedido quando ha gol
+ *   GET {apiBase}/games/{id}/play-sequence?count=N
+ *     -> { results: PenaltyPlayResult[] }              proxima leva de resultados ja decididos
  *
- * Enquanto a API real nao existe, `USE_MOCK = true` serve os mesmos
- * formatos com dados locais. Para plugar a API real basta definir
- * `USE_MOCK = false` e configurar `apiBase` via runtime config ou
- * pela query string `?api=https://sua-api.com`.
+ * O resultado de cada chute (ganhou/nao_ganhou + premio) vem pronto do
+ * backend antes da jogada — o motor 3D so encena visualmente o que ja foi
+ * decidido (ver docs/superpowers/specs/2026-07-03-mira-automatica-resultado-api-design.md).
+ * Vocabulario (tipo_acao/tipo_premio/chave_giro) reaproveitado dos mocks de
+ * Roleta (app/mocks/index.ts), adaptado ao penalti: sem 'replay' (nao
+ * existe no dominio) e sem numeros da sorte especificos em
+ * tipo_premio: 'cota' por enquanto.
+ *
+ * Enquanto a API real nao existe, `USE_MOCK = true` gera sequencias
+ * aleatorias localmente. Para plugar a API real basta definir
+ * `USE_MOCK = false` e configurar `apiBase` via runtime config ou pela
+ * query string `?api=https://sua-api.com`.
  */
-
-export type PrizeType = 'money' | 'lucky-numbers'
-
-export interface Prize {
-  type: PrizeType
-  /** Valor em centavos quando type === 'money' */
-  amountCents?: number
-  /** Numeros da sorte quando type === 'lucky-numbers' */
-  numbers?: string[]
-  /** Nome da promocao / sorteio */
-  campaign?: string
-}
 
 export interface GameInfo {
   id: string
@@ -35,6 +30,17 @@ export interface GameInfo {
   /** Chamada exibida no topo do jogo, ex: "Valendo R$ 500" */
   headline: string
   active: boolean
+}
+
+export interface PenaltyPlayResult {
+  id: number
+  /** Identificador unico da jogada, mesmo padrao dos mocks de Roleta. */
+  chave_giro: string
+  tipo_acao: 'ganhou' | 'nao_ganhou'
+  tipo_premio: 'valor' | 'cota' | 'nao_ganhou'
+  /** Texto de exibicao, ex: "R$ 50,00" ou "5 Cotas". */
+  nome: string
+  valor: string | null
 }
 
 const USE_MOCK = true
@@ -49,21 +55,24 @@ const MOCK_GAMES: GameInfo[] = [
   }
 ]
 
-function mockPrize(): Prize {
-  if (Math.random() < 0.5) {
-    const values = [500, 1000, 2500, 5000, 10000, 50000]
-    return {
-      type: 'money',
-      amountCents: values[Math.floor(Math.random() * values.length)]!,
-      campaign: 'Penalti Premiado'
-    }
+const WIN_CHANCE = 0.35
+const MONEY_PRIZES = ['R$ 5,00', 'R$ 10,00', 'R$ 25,00', 'R$ 50,00', 'R$ 100,00']
+const COTA_PRIZES = ['1 Cota', '3 Cotas', '5 Cotas', '10 Cotas']
+
+let mockIdCounter = 0
+
+function mockPlayResult(): PenaltyPlayResult {
+  const id = ++mockIdCounter
+  const chave_giro = `penalti_${id}`
+  if (Math.random() >= WIN_CHANCE) {
+    return { id, chave_giro, tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Nao foi dessa vez', valor: null }
   }
-  const numbers: string[] = []
-  while (numbers.length < 3) {
-    const n = String(Math.floor(Math.random() * 100000)).padStart(5, '0')
-    if (!numbers.includes(n)) numbers.push(n)
+  if (Math.random() < 0.4) {
+    const nome = COTA_PRIZES[Math.floor(Math.random() * COTA_PRIZES.length)]!
+    return { id, chave_giro, tipo_acao: 'ganhou', tipo_premio: 'cota', nome, valor: nome.split(' ')[0]! }
   }
-  return { type: 'lucky-numbers', numbers, campaign: 'Sorteio Penalti Premiado' }
+  const nome = MONEY_PRIZES[Math.floor(Math.random() * MONEY_PRIZES.length)]!
+  return { id, chave_giro, tipo_acao: 'ganhou', tipo_premio: 'valor', nome, valor: nome.replace(/[^\d,]/g, '') }
 }
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -85,24 +94,16 @@ export function useGameApi() {
     return data.games
   }
 
-  async function submitPlay(gameId: string, outcome: 'goal' | 'save' | 'out'): Promise<Prize | null> {
+  async function fetchPlaySequence(gameId: string, count: number): Promise<PenaltyPlayResult[]> {
     if (USE_MOCK || !apiBase) {
       await delay(250)
-      return outcome === 'goal' ? mockPrize() : null
+      return Array.from({ length: count }, mockPlayResult)
     }
-    const res = await fetch(`${apiBase}/games/${gameId}/play`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ outcome })
-    })
-    if (!res.ok) throw new Error(`Falha ao registrar jogada: ${res.status}`)
-    const data = (await res.json()) as { prize: Prize | null }
-    return data.prize
+    const res = await fetch(`${apiBase}/games/${gameId}/play-sequence?count=${count}`)
+    if (!res.ok) throw new Error(`Falha ao buscar sequencia de jogadas: ${res.status}`)
+    const data = (await res.json()) as { results: PenaltyPlayResult[] }
+    return data.results
   }
 
-  function formatMoney(cents: number): string {
-    return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-  }
-
-  return { fetchGames, submitPlay, formatMoney }
+  return { fetchGames, fetchPlaySequence }
 }
