@@ -1432,9 +1432,9 @@ export class PenaltyEngine {
     const thighLen = u * 1.28
     const shinLen = u * 1.22
 
-    // Tornozelos
-    let ankleL: Vec = { x: hipL.x - u * 0.18 + (running ? legSwing * u * 0.85 : 0), y: u * 3.32 }
-    let ankleR: Vec = { x: hipR.x + u * 0.18 - (running ? legSwing * u * 0.85 : 0), y: u * 3.32 }
+    // Tornozelos: quase na extensao total dos ossos para as pernas ficarem retas
+    let ankleL: Vec = { x: hipL.x - u * 0.14 + (running ? legSwing * u * 0.85 : 0), y: u * 3.42 }
+    let ankleR: Vec = { x: hipR.x + u * 0.14 - (running ? legSwing * u * 0.85 : 0), y: u * 3.42 }
     if (running) {
       // Levantar o pe que esta atras (corrida com calcanhar subindo)
       ankleL.y -= Math.max(0, -legSwing) * u * 0.75
@@ -1449,7 +1449,7 @@ export class PenaltyEngine {
         y: hipR.y + Math.sin(ang + Math.PI / 2) * reach
       }
       footAngR = lerp(0.9, -0.55, swing)
-      ankleL = { x: hipL.x - u * 0.34, y: u * 3.32 }
+      ankleL = { x: hipL.x - u * 0.3, y: u * 3.42 }
     }
 
     // Chuteira modelada: calcanhar, sola e bico
@@ -1480,28 +1480,24 @@ export class PenaltyEngine {
       ctx.restore()
     }
 
-    // Perna completa: coxa com volume, panturrilha com barriga, meiao e chuteira
+    // Perna completa: coxa afunilando, joelho continuo, panturrilha no meiao, chuteira
     const drawLeg = (hip: Vec, ankle: Vec, kneeSign: number, bootDir: number, bootAng: number) => {
       const knee = solveJoint(hip, ankle, thighLen, shinLen, kneeSign)
-      const sockTop: Vec = { x: lerp(knee.x, ankle.x, 0.32), y: lerp(knee.y, ankle.y, 0.32) }
+      const sockTop: Vec = { x: lerp(knee.x, ankle.x, 0.28), y: lerp(knee.y, ankle.y, 0.28) }
       // Coxa: larga no quadril, estreita no joelho
-      muscle(hip, knee, u * 0.72, u * 0.44, u * 0.05, skinHi, skin, skinSh)
-      // Joelho
-      ctx.fillStyle = skin
-      ctx.beginPath()
-      ctx.arc(knee.x, knee.y, u * 0.22, 0, TAU)
-      ctx.fill()
-      // Panturrilha nua ate o meiao
-      muscle(knee, sockTop, u * 0.42, u * 0.4, u * 0.03, skinHi, skin, skinSh)
+      muscle(hip, knee, u * 0.56, u * 0.36, u * 0.03, skinHi, skin, skinSh)
+      // Panturrilha nua ate o meiao (mesma largura do joelho para nao criar degrau)
+      muscle(knee, sockTop, u * 0.36, u * 0.33, u * 0.02, skinHi, skin, skinSh)
       // Meiao com barriga da panturrilha
-      muscle(sockTop, ankle, u * 0.46, u * 0.28, u * 0.09, sockHi, sock, sockSh)
+      muscle(sockTop, ankle, u * 0.38, u * 0.24, u * 0.06, sockHi, sock, sockSh)
       // Punho amarelo do meiao
-      this.limb(ctx, sockTop.x, sockTop.y, lerp(sockTop.x, ankle.x, 0.14), lerp(sockTop.y, ankle.y, 0.14), u * 0.42, shirt)
+      this.limb(ctx, sockTop.x, sockTop.y, lerp(sockTop.x, ankle.x, 0.13), lerp(sockTop.y, ankle.y, 0.13), u * 0.34, shirt)
       bootShape(ankle, bootDir, bootAng)
     }
 
-    // Perna de apoio (esquerda) atras do calcao
+    // As duas pernas ficam atras do calcao: o tecido cobre o topo das coxas
     drawLeg(hipL, ankleL, -1, -1, running ? -legSwing * 0.3 : -0.06)
+    drawLeg(hipR, ankleR, kickP > 0 ? (swing < 0.4 ? 1 : -1) : 1, 1, kickP > 0 ? footAngR : running ? legSwing * 0.3 : 0.06)
 
     // Calcao azul: pelvis com abertura das pernas e frisos
     const shortsGrad = ctx.createLinearGradient(-u, 0, u, 0)
@@ -1538,9 +1534,6 @@ export class PenaltyEngine {
     ctx.moveTo(u * 0.9, u * 0.18)
     ctx.quadraticCurveTo(u * 1.02, u * 0.75, u * 0.97, u * 1.26)
     ctx.stroke()
-
-    // Perna do chute (direita) por cima do calcao
-    drawLeg(hipR, ankleR, kickP > 0 ? (swing < 0.4 ? 1 : -1) : -1, 1, kickP > 0 ? footAngR : running ? legSwing * 0.3 : 0.06)
 
     // Tronco: costas com ombros largos, latissimo afunilando para a cintura
     const shirtGrad = ctx.createLinearGradient(-u * 1.1, 0, u * 1.1, 0)
@@ -1590,28 +1583,19 @@ export class PenaltyEngine {
     const upperLen = u * 1.05
     const foreLen = u * 1.0
     const drawArm = (side: number, hand: Vec, elbowSign: number) => {
-      const shoulder: Vec = { x: side * u * 0.98, y: -u * 1.98 }
+      const shoulder: Vec = { x: side * u * 0.94, y: -u * 1.98 }
       const elbow = solveJoint(shoulder, hand, upperLen, foreLen, elbowSign)
-      // Deltoide
-      ctx.fillStyle = side < 0 ? shirtHi : shirtSh
-      ctx.beginPath()
-      ctx.arc(shoulder.x, shoulder.y + u * 0.05, u * 0.34, 0, TAU)
-      ctx.fill()
-      // Manga curta ate acima do cotovelo
-      const sleeveEnd: Vec = { x: lerp(shoulder.x, elbow.x, 0.62), y: lerp(shoulder.y, elbow.y, 0.62) }
-      muscle(shoulder, sleeveEnd, u * 0.52, u * 0.4, u * 0.02, shirtHi, shirt, shirtSh)
-      this.limb(ctx, lerp(shoulder.x, sleeveEnd.x, 0.85), lerp(shoulder.y, sleeveEnd.y, 0.85), sleeveEnd.x, sleeveEnd.y, u * 0.36, trim)
+      // Manga curta ate acima do cotovelo (a ponta redonda faz o ombro)
+      const sleeveEnd: Vec = { x: lerp(shoulder.x, elbow.x, 0.6), y: lerp(shoulder.y, elbow.y, 0.6) }
+      muscle(shoulder, sleeveEnd, u * 0.44, u * 0.36, u * 0.01, shirtHi, shirt, shirtSh)
+      this.limb(ctx, lerp(shoulder.x, sleeveEnd.x, 0.88), lerp(shoulder.y, sleeveEnd.y, 0.88), sleeveEnd.x, sleeveEnd.y, u * 0.3, trim)
       // Biceps/triceps de pele + antebraco afunilando ate o punho
-      muscle(sleeveEnd, elbow, u * 0.34, u * 0.28, u * 0.03, skinHi, skin, skinSh)
-      muscle(elbow, hand, u * 0.3, u * 0.18, u * 0.04, skinHi, skin, skinSh)
-      // Mao fechada
+      muscle(sleeveEnd, elbow, u * 0.3, u * 0.26, u * 0.02, skinHi, skin, skinSh)
+      muscle(elbow, hand, u * 0.26, u * 0.17, u * 0.02, skinHi, skin, skinSh)
+      // Mao
       ctx.fillStyle = skin
       ctx.beginPath()
-      ctx.ellipse(hand.x, hand.y, u * 0.2, u * 0.24, Math.atan2(hand.y - elbow.y, hand.x - elbow.x), 0, TAU)
-      ctx.fill()
-      ctx.fillStyle = skinSh
-      ctx.beginPath()
-      ctx.ellipse(hand.x, hand.y + u * 0.06, u * 0.15, u * 0.1, 0, 0, TAU)
+      ctx.ellipse(hand.x, hand.y, u * 0.17, u * 0.21, Math.atan2(hand.y - elbow.y, hand.x - elbow.x), 0, TAU)
       ctx.fill()
     }
 
@@ -1626,8 +1610,9 @@ export class PenaltyEngine {
       handL = { x: lerp(-u * 1.1, -u * 1.85, swing), y: lerp(u * 0.1, -u * 1.5, swing) }
       handR = { x: lerp(u * 1.1, u * 1.5, swing), y: lerp(u * 0.1, u * 0.75, swing) }
     } else {
-      handL = { x: -u * 1.08, y: u * 0.18 + breath * 2 }
-      handR = { x: u * 1.08, y: u * 0.18 + breath * 2 }
+      // Bracos relaxados ao lado do corpo
+      handL = { x: -u * 1.02, y: u * 0.4 + breath * 2 }
+      handR = { x: u * 1.02, y: u * 0.4 + breath * 2 }
     }
     drawArm(-1, handL, -1)
     drawArm(1, handR, 1)
