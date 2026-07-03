@@ -16,14 +16,17 @@ import { buildBlobShadow } from './blobShadow'
 import { buildCameraRig, type CameraRig } from './cameraRig'
 import { buildFieldAtmosphere, type FieldAtmosphere } from './fieldAtmosphere'
 import { buildGoalFrame } from './goalFrameMesh'
-import { decideShot } from './goalkeeperAI'
+import { computeDiveTarget } from './goalkeeperAI'
 import { buildNetMesh, type NetMesh } from './netMesh'
 import type { Ripple } from './netRipple'
-import { screenToAim } from './aimInput'
-import { clampAim, computeWorldLayout, type WorldLayout } from './worldGeometry'
+import { computeWorldLayout, type WorldLayout } from './worldGeometry'
 import { loadKeeperDiveModel, type KeeperDiveModel } from './keeperDiveModel'
 
 const TIMINGS = { runup: 0.72, strike: 0.16, flight: 0.5, aftermath: 1.35 }
+/** Velocidade angular (rad/s) do vaivem da mira automatica — ciclo completo em ~5.2s. */
+const AUTO_AIM_SPEED = 1.2
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
 export class PenaltyEngine3D {
   private canvas: HTMLCanvasElement
@@ -38,9 +41,8 @@ export class PenaltyEngine3D {
   state: EngineState = 'ready'
   private stateStart = 0
 
-  private hasAim = false
-  private pointerActive = false
-  private aim: Vec2 = { x: 0, y: 0 }
+  /** Posicao X atual da mira automatica (vaivem esquerda<->direita). */
+  private autoAimX = 0
   private shotTarget: Vec2 = { x: 0, y: 0 }
   private outcome: ShotOutcome = 'goal'
   private diveTarget: Vec2 = { x: 0, y: 0 }
@@ -79,6 +81,7 @@ export class PenaltyEngine3D {
     this.layout = computeWorldLayout()
     this.ballStart = { x: 0, y: this.layout.ballRadius, z: this.layout.spotZ }
     this.ballPos = { ...this.ballStart }
+    this.autoAimX = this.layout.goalCenterX
     // Aproximacao curta em diagonal: o suficiente para dar vida ao runup
     // sem tirar o batedor do enquadramento (fov estreito) nem deixa-lo
     // gigante na frente da camera.
@@ -141,12 +144,9 @@ export class PenaltyEngine3D {
     this.resizeObserver = new ResizeObserver(() => this.handleResize())
     this.resizeObserver.observe(canvas.parentElement ?? canvas)
 
-    canvas.addEventListener('pointerdown', this.onPointerDown)
-    canvas.addEventListener('pointermove', this.onPointerMove)
-    window.addEventListener('pointerup', this.onPointerUp)
-
-    this.stateStart = this.clock.getElapsedTime()
     this.raf = requestAnimationFrame(this.frame)
+    // Mira automatica ja comeca rodando — nao ha mais toque para inicia-la.
+    this.setState('aiming')
   }
 
   private async loadDiveModelAsync() {
@@ -165,16 +165,10 @@ export class PenaltyEngine3D {
     this.destroyed = true
     cancelAnimationFrame(this.raf)
     this.resizeObserver?.disconnect()
-    this.canvas.removeEventListener('pointerdown', this.onPointerDown)
-    this.canvas.removeEventListener('pointermove', this.onPointerMove)
-    window.removeEventListener('pointerup', this.onPointerUp)
     this.renderer.dispose()
   }
 
   reset() {
-    this.setState('ready')
-    this.hasAim = false
-    this.pointerActive = false
     this.resultSent = false
     this.ripples = []
     this.ballPos = { ...this.ballStart }
@@ -182,47 +176,28 @@ export class PenaltyEngine3D {
     this.divePlayed = false
     // Modelo real fica na cena; so volta do mergulho para o idle em loop.
     if (this.diveModelActive) this.keeperDiveModel!.playIdle()
-  }
-
-  // ------------------------------------------------------------------
-  // Entrada do jogador
-  // ------------------------------------------------------------------
-
-  private onPointerDown = (e: PointerEvent) => {
-    if (this.state !== 'ready' && this.state !== 'aiming') return
-    this.pointerActive = true
-    this.aim = screenToAim(e.clientX, e.clientY, this.canvas.getBoundingClientRect(), this.cameraRig.camera, this.layout)
-    this.hasAim = true
+    // Rearma a mira automatica (tambem reinicia o som ambiente, via
+    // onStateChange('aiming') no componente Vue).
     this.setState('aiming')
-  }
-
-  private onPointerMove = (e: PointerEvent) => {
-    if (!this.pointerActive || this.state !== 'aiming') return
-    this.aim = screenToAim(e.clientX, e.clientY, this.canvas.getBoundingClientRect(), this.cameraRig.camera, this.layout)
-  }
-
-  private onPointerUp = () => {
-    if (!this.pointerActive) return
-    this.pointerActive = false
-    if (this.state === 'aiming' && this.hasAim) this.shoot(this.aim)
   }
 
   // ------------------------------------------------------------------
   // Logica da cobranca
   // ------------------------------------------------------------------
 
-  private shoot(target: Vec2) {
-    this.shotTarget = clampAim(target.x, target.y, this.layout.aimBounds)
-    const decision = decideShot(this.shotTarget, this.layout)
-    this.outcome = decision.outcome
-    this.diveTarget = decision.diveTarget
-
-    this.ballEnd =
-      this.outcome === 'out'
-        ? { x: this.shotTarget.x * 1.3, y: this.shotTarget.y, z: this.layout.goalLineZ - this.layout.goalDepth * 1.6 }
-        : { x: this.shotTarget.x, y: this.shotTarget.y, z: this.layout.goalLineZ }
-
-    this.hasAim = false
+  /**
+   * Chamado pelo componente Vue depois que o resultado (ja decidido pela
+   * API) e conhecido. Congela a posicao atual da mira automatica como o
+   * alvo do chute; o goleiro mergulha exato (defende) ou para longe (vira
+   * gol), conforme `computeDiveTarget`.
+   */
+  shoot(outcome: 'goal' | 'save') {
+    if (this.state !== 'ready' && this.state !== 'aiming') return
+    const aimX = this.autoAimX
+    this.shotTarget = { x: aimX, y: this.layout.keeperHeight }
+    this.outcome = outcome
+    this.diveTarget = computeDiveTarget(outcome, aimX, this.layout)
+    this.ballEnd = { x: this.shotTarget.x, y: this.shotTarget.y, z: this.layout.goalLineZ }
     this.setState('runup')
   }
 
@@ -308,12 +283,12 @@ export class PenaltyEngine3D {
         this.updateKeeperIdle(now, delta)
     }
 
-    const aiming = this.state === 'aiming' && this.hasAim
-    const b = this.layout.aimBounds
-    const aimInGoal =
-      this.aim.x > b.minX && this.aim.x < b.maxX &&
-      this.aim.y > b.minY && this.aim.y < b.maxY
-    this.aimReticle.update(aiming ? this.aim : null, aimInGoal, now)
+    const autoAiming = this.state === 'ready' || this.state === 'aiming'
+    if (autoAiming) {
+      const sweep = (Math.sin(now * AUTO_AIM_SPEED) + 1) / 2
+      this.autoAimX = lerp(this.layout.aimBounds.minX, this.layout.aimBounds.maxX, sweep)
+    }
+    this.aimReticle.update(autoAiming ? { x: this.autoAimX, y: this.layout.keeperHeight } : null, true, now)
 
     this.fieldAtmosphere.update(now)
     this.netMesh.update(this.ripples, now)
@@ -345,14 +320,11 @@ export class PenaltyEngine3D {
     }
 
     // Velocidade inicial do pos-impacto — antes disso a bola congelava no
-    // ar em defesa/fora (so o gol "parecia" certo por estar contra a rede).
+    // ar em defesa (so o gol "parecia" certo por estar contra a rede).
     const sideways = Math.sign(this.ballEnd.x) || 1
     if (this.outcome === 'save') {
       // Rebatida do goleiro: volta para o campo, aberta para o lado do mergulho.
       this.ballVel = { x: sideways * 2.2, y: 1.6, z: 4.2 }
-    } else if (this.outcome === 'out') {
-      // Segue o rumo, perdendo forca e caindo atras do gol.
-      this.ballVel = { x: sideways * 1.4, y: 0.4, z: -2.6 }
     } else {
       // Gol: a rede segura e a bola escorrega para o chao.
       this.ballVel = { x: 0, y: -0.6, z: -1.2 }
