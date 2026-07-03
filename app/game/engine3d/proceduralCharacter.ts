@@ -23,14 +23,31 @@ interface Joints {
   legR: Group
 }
 
-const PALETTE: Record<CharacterRole, { shirt: number; shorts: number; skin: number }> = {
-  kicker: { shirt: 0xffd23f, shorts: 0x1f4fd0, skin: 0x8a5a3b },
-  keeper: { shirt: 0xff6a33, shorts: 0x22242b, skin: 0xc98e63 }
+interface Palette {
+  shirt: number
+  shorts: number
+  skin: number
+  boots: number
+  gloves?: number
+}
+
+const PALETTE: Record<CharacterRole, Palette> = {
+  kicker: { shirt: 0xffd23f, shorts: 0x1f4fd0, skin: 0x8a5a3b, boots: 0x1c1e24 },
+  keeper: { shirt: 0xff6a33, shorts: 0x22242b, skin: 0xc98e63, boots: 0x1c1e24, gloves: 0x3ddc68 }
 }
 
 function limb(radius: number, length: number, color: number): Mesh {
   const mesh = new Mesh(new CapsuleGeometry(radius, length, 4, 8), new MeshStandardMaterial({ color }))
   mesh.position.y = -length / 2 - radius
+  return mesh
+}
+
+/** Esfera presa na ponta de um membro: chuteira no pe, luva na mao. */
+function tip(parentLimb: Mesh, radius: number, color: number): Mesh {
+  const mesh = new Mesh(new SphereGeometry(radius, 10, 10), new MeshStandardMaterial({ color }))
+  const capsule = parentLimb.geometry as CapsuleGeometry
+  mesh.position.y = -(capsule.parameters.length / 2 + capsule.parameters.radius * 0.4)
+  parentLimb.add(mesh)
   return mesh
 }
 
@@ -52,22 +69,30 @@ function buildJoints(role: CharacterRole): { root: Group; joints: Joints } {
   torso.add(head)
 
   const armL = new Group()
-  armL.add(limb(0.07, 0.5, palette.skin))
-  armL.position.set(-0.22, 0.55, 0)
+  const armMeshL = limb(0.065, 0.42, palette.skin)
+  if (palette.gloves) tip(armMeshL, 0.085, palette.gloves)
+  armL.add(armMeshL)
+  armL.position.set(-0.24, 0.55, 0)
   torso.add(armL)
 
   const armR = new Group()
-  armR.add(limb(0.07, 0.5, palette.skin))
-  armR.position.set(0.22, 0.55, 0)
+  const armMeshR = limb(0.065, 0.42, palette.skin)
+  if (palette.gloves) tip(armMeshR, 0.085, palette.gloves)
+  armR.add(armMeshR)
+  armR.position.set(0.24, 0.55, 0)
   torso.add(armR)
 
   const legL = new Group()
-  legL.add(limb(0.09, 0.75, palette.shorts))
+  const legMeshL = limb(0.09, 0.72, palette.shorts)
+  tip(legMeshL, 0.1, palette.boots)
+  legL.add(legMeshL)
   legL.position.set(-0.12, 0, 0)
   hips.add(legL)
 
   const legR = new Group()
-  legR.add(limb(0.09, 0.75, palette.shorts))
+  const legMeshR = limb(0.09, 0.72, palette.shorts)
+  tip(legMeshR, 0.1, palette.boots)
+  legR.add(legMeshR)
   legR.position.set(0.12, 0, 0)
   hips.add(legR)
 

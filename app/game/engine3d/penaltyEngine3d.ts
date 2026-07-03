@@ -49,6 +49,8 @@ export class PenaltyEngine3D {
   private ballStart = { x: 0, y: 0.11, z: 0 }
   private ballEnd = { x: 0, y: 0.11, z: 0 }
   private ballPos = { x: 0, y: 0.11, z: 0 }
+  /** Velocidade da bola no pos-impacto (rebote/queda), em m/s. */
+  private ballVel = { x: 0, y: 0, z: 0 }
   private ripples: Ripple[] = []
   private resultSent = false
 
@@ -259,6 +261,7 @@ export class PenaltyEngine3D {
       }
       case 'aftermath':
         if (this.diveModelActive) this.keeperDiveModel!.update(delta)
+        this.updateBallAftermath(delta)
         if (t >= TIMINGS.aftermath) {
           if (!this.resultSent) {
             this.resultSent = true
@@ -283,7 +286,46 @@ export class PenaltyEngine3D {
     if (this.outcome === 'goal') {
       this.ripples.push({ x: this.ballEnd.x, y: this.ballEnd.y, start: now })
     }
+
+    // Velocidade inicial do pos-impacto — antes disso a bola congelava no
+    // ar em defesa/fora (so o gol "parecia" certo por estar contra a rede).
+    const sideways = Math.sign(this.ballEnd.x) || 1
+    if (this.outcome === 'save') {
+      // Rebatida do goleiro: volta para o campo, aberta para o lado do mergulho.
+      this.ballVel = { x: sideways * 2.2, y: 1.6, z: 4.2 }
+    } else if (this.outcome === 'out') {
+      // Segue o rumo, perdendo forca e caindo atras do gol.
+      this.ballVel = { x: sideways * 1.4, y: 0.4, z: -2.6 }
+    } else {
+      // Gol: a rede segura e a bola escorrega para o chao.
+      this.ballVel = { x: 0, y: -0.6, z: -1.2 }
+    }
+
     this.setState('aftermath')
+  }
+
+  /** Integra gravidade + quique amortecido no chao durante o aftermath. */
+  private updateBallAftermath(delta: number) {
+    const GRAVITY = 9.8
+    this.ballVel.y -= GRAVITY * delta
+    this.ballPos.x += this.ballVel.x * delta
+    this.ballPos.y += this.ballVel.y * delta
+    this.ballPos.z += this.ballVel.z * delta
+
+    const floor = this.layout.ballRadius
+    if (this.ballPos.y < floor) {
+      this.ballPos.y = floor
+      this.ballVel.y = Math.abs(this.ballVel.y) > 0.8 ? -this.ballVel.y * 0.45 : 0
+      this.ballVel.x *= 0.7
+      this.ballVel.z *= 0.7
+    }
+
+    // No gol, a rede segura a bola — nao deixa atravessar o fundo.
+    const netZ = this.layout.goalLineZ - this.layout.goalDepth + this.layout.ballRadius
+    if (this.outcome === 'goal' && this.ballPos.z < netZ) {
+      this.ballPos.z = netZ
+      this.ballVel.z = 0
+    }
   }
 
   private render() {
