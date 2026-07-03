@@ -213,6 +213,10 @@ onBeforeUnmount(() => {
 .game-canvas {
   position: absolute;
   inset: 0;
+  /* inset nao estica elementos replaced (canvas fica no tamanho do buffer
+     do renderer, 1.5x maior que a tela) — precisa do 100% explicito. */
+  width: 100%;
+  height: 100%;
   display: block;
   cursor: crosshair;
 }

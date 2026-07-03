@@ -27,6 +27,13 @@ export function buildCameraRig(): CameraRig {
 
   function resize(aspect: number) {
     camera.aspect = aspect
+    // FOV adaptativo: em telas estreitas (retrato/mobile), o FOV vertical
+    // fixo cortaria as traves fora do quadro. Garante um FOV horizontal
+    // minimo de ~30 graus (gol inteiro + folga a 18m), crescendo o FOV
+    // vertical quando o aspecto aperta.
+    const MIN_HALF_HFOV_RAD = (15 * Math.PI) / 180
+    const neededVFov = (2 * Math.atan(Math.tan(MIN_HALF_HFOV_RAD) / aspect) * 180) / Math.PI
+    camera.fov = Math.max(44, neededVFov)
     camera.updateProjectionMatrix()
   }
 
