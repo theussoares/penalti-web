@@ -2,7 +2,6 @@ import {
   AmbientLight,
   Clock,
   DirectionalLight,
-  Fog,
   Mesh,
   Scene,
   WebGLRenderer
@@ -12,16 +11,11 @@ import type { Character } from './character'
 import { createCharacter } from './character'
 import { buildBallMesh } from './ballMesh'
 import { arcHeight, ballFlightPosition } from './ballFlight'
-import { buildAdBoards, type AdBoards } from './adBoardMesh'
 import { buildAimReticle, type AimReticle } from './aimReticle'
 import { buildBlobShadow } from './blobShadow'
 import { buildCameraRig, type CameraRig } from './cameraRig'
-import { buildStadiumLights, type StadiumLights } from './stadiumLights'
-import { buildCrowdBillboard, type CrowdBillboard } from './crowdBillboard'
 import { buildFieldAtmosphere, type FieldAtmosphere } from './fieldAtmosphere'
-import { buildAmbientEffects, type AmbientEffects } from './ambientEffects'
 import { buildGoalFrame } from './goalFrameMesh'
-import { buildGroundMesh } from './groundMesh'
 import { decideShot } from './goalkeeperAI'
 import { buildNetMesh, type NetMesh } from './netMesh'
 import type { Ripple } from './netRipple'
@@ -65,11 +59,7 @@ export class PenaltyEngine3D {
   private scene = new Scene()
   private ballMesh: Mesh
   private netMesh: NetMesh
-  private crowd: CrowdBillboard
-  private adBoards: AdBoards
-  private stadiumLightsRig: StadiumLights
   private fieldAtmosphere: FieldAtmosphere
-  private ambientEffects: AmbientEffects
   private aimReticle: AimReticle
   private ballShadow: Mesh
   private kickerShadow: Mesh
@@ -95,28 +85,23 @@ export class PenaltyEngine3D {
     this.kickerStartPos = { x: -1.7, z: this.layout.spotZ + 0.9 }
     this.kickerKickPos = { x: -0.35, z: this.layout.spotZ + 0.35 }
 
-    this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'low-power' })
+    // alpha:true + clear color transparente para o fundo estatico (foto de
+    // estadio gerada por IA, ver PenaltyGame.client.vue) aparecer por tras
+    // da cena 3D — so o gol/bola/personagens/sombras sao WebGL de verdade
+    // agora; torcida, refletores, telao e fumaca vem da foto.
+    this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'low-power', alpha: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
-    // Azul-noite de estadio em vez de preto puro.
-    this.renderer.setClearColor(0x050a14, 1)
+    this.renderer.setClearColor(0x000000, 0)
     // shadowMap.enabled fica false (padrao) de proposito: sem sombras dinamicas no v1.
 
     this.cameraRig = buildCameraRig()
-
-    this.scene.fog = new Fog(0x050a14, 15, 40)
 
     this.scene.add(new AmbientLight(0xffffff, 0.7))
     const sun = new DirectionalLight(0xfff2d0, 0.8)
     sun.position.set(-4, 8, 6)
     this.scene.add(sun)
 
-    this.scene.add(buildGroundMesh(this.layout, this.renderer.capabilities.getMaxAnisotropy()))
     this.scene.add(buildGoalFrame(this.layout))
-
-    const sceneryWidth = this.layout.goalWidth * 4.5
-    this.adBoards = buildAdBoards(sceneryWidth, 1.0)
-    this.adBoards.mesh.position.set(0, 0.55, this.layout.goalLineZ - this.layout.goalDepth - 0.6)
-    this.scene.add(this.adBoards.mesh)
 
     this.ballMesh = buildBallMesh(this.layout.ballRadius)
     this.scene.add(this.ballMesh)
@@ -127,24 +112,11 @@ export class PenaltyEngine3D {
     this.aimReticle = buildAimReticle(this.layout.ballRadius, this.layout.goalLineZ)
     this.scene.add(this.aimReticle.object3D)
 
-    // Torcida como faixa de arquibancada acima das placas, atras do gol —
-    // nao mais um telao preenchendo a tela inteira. Acima dela sobra o ceu
-    // escuro do estadio.
-    const crowdZ = this.layout.goalLineZ - this.layout.goalDepth - 1.6
-    this.crowd = buildCrowdBillboard(sceneryWidth, 5.5)
-    this.crowd.mesh.position.set(0, 1.0 + 2.75, crowdZ)
-    // Topo levemente reclinado para tras, como o rake de arquibancada real.
-    this.crowd.mesh.rotation.x = -0.12
-    this.scene.add(this.crowd.mesh)
-
-    this.stadiumLightsRig = buildStadiumLights(sceneryWidth, 1.0 + 5.5 + 0.2, crowdZ + 0.05)
-    this.scene.add(this.stadiumLightsRig.object3D)
-
+    // Brilho/particulas sutis sobre o gramado da foto — unico efeito
+    // ambiente que sobra em 3D, o resto (torcida/refletores/telao/fumaca)
+    // ja vem da imagem de fundo.
     this.fieldAtmosphere = buildFieldAtmosphere(this.layout)
     this.scene.add(this.fieldAtmosphere.object3D)
-
-    this.ambientEffects = buildAmbientEffects(this.layout)
-    this.scene.add(this.ambientEffects.object3D)
 
     // Sombras falsas coladas no gramado (sem sombra dinamica no v1).
     this.ballShadow = buildBlobShadow(this.layout.ballRadius * 2.2)
@@ -343,11 +315,7 @@ export class PenaltyEngine3D {
       this.aim.y > b.minY && this.aim.y < b.maxY
     this.aimReticle.update(aiming ? this.aim : null, aimInGoal, now)
 
-    this.crowd.setExcitement(this.outcome === 'goal' && this.state !== 'ready' ? 1 : 0, now)
-    this.adBoards.update(now)
-    this.stadiumLightsRig.update(now)
     this.fieldAtmosphere.update(now)
-    this.ambientEffects.update(now)
     this.netMesh.update(this.ripples, now)
     this.ballMesh.position.set(this.ballPos.x, this.ballPos.y, this.ballPos.z)
 
@@ -374,7 +342,6 @@ export class PenaltyEngine3D {
     this.cb.onImpact?.(this.outcome)
     if (this.outcome === 'goal') {
       this.ripples.push({ x: this.ballEnd.x, y: this.ballEnd.y, start: now })
-      this.crowd.celebrate(now)
     }
 
     // Velocidade inicial do pos-impacto — antes disso a bola congelava no

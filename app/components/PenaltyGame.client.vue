@@ -8,6 +8,30 @@ const { fetchGames, submitPlay, formatMoney } = useGameApi()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const engineState = ref<EngineState>('ready')
+// Fundo de estadio gerado por IA: retrato para celular, paisagem para
+// desktop. A proporcao da cena fica travada na proporcao da imagem para o
+// gol/goleiro 3D (renderizados por cima, canvas transparente) baterem
+// certinho com o gramado da foto em qualquer tamanho de tela.
+const PORTRAIT_ASPECT = 853 / 1844
+const LANDSCAPE_ASPECT = 1536 / 1024
+const isDesktopLayout = ref(false)
+const stageSize = ref({ width: 0, height: 0 })
+const bgImage = computed(() =>
+  isDesktopLayout.value ? '/images/stadium-bg-landscape.webp' : '/images/stadium-bg-portrait.webp'
+)
+
+function updateLayoutMode() {
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  isDesktopLayout.value = vw / vh >= 1
+  const ratio = isDesktopLayout.value ? LANDSCAPE_ASPECT : PORTRAIT_ASPECT
+  // Encaixa a proporcao travada da imagem dentro da viewport: usa a
+  // dimensao que "sobra" como barra (pillarbox/letterbox), sem esticar.
+  stageSize.value =
+    vw / vh > ratio
+      ? { width: vh * ratio, height: vh }
+      : { width: vw, height: vw / ratio }
+}
 const game = ref<GameInfo | null>(null)
 const prize = ref<Prize | null>(null)
 const modal = ref<'none' | 'win' | 'lose'>('none')
@@ -67,6 +91,9 @@ function toggleMute() {
 }
 
 onMounted(async () => {
+  updateLayoutMode()
+  window.addEventListener('resize', updateLayoutMode)
+
   game.value = (await fetchGames()).find((g) => g.active) ?? null
 
   if (!canvasRef.value) return
@@ -82,6 +109,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateLayoutMode)
   cancelAnimationFrame(countUpRaf)
   engine?.destroy()
   sfx.destroy()
@@ -89,7 +117,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="stage">
+  <div class="stage-viewport">
+  <div
+    class="stage"
+    :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, backgroundImage: `url(${bgImage})` }"
+  >
     <canvas ref="canvasRef" class="game-canvas" />
 
     <!-- HUD -->
@@ -197,14 +229,31 @@ onBeforeUnmount(() => {
       </div>
     </Transition>
   </div>
+  </div>
 </template>
 
 <style scoped>
-.stage {
+.stage-viewport {
   position: fixed;
   inset: 0;
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: #04120a;
+  overflow: hidden;
+}
+
+.stage {
+  position: relative;
+  /* Largura/altura calculadas em JS (updateLayoutMode) para travar a
+     proporcao da imagem de fundo dentro da viewport, com barra de
+     pillarbox/letterbox em vez de esticar — o gol/goleiro 3D (canvas
+     transparente por cima) so bate certo com o gramado da foto se essa
+     caixa mantiver a proporcao exata da imagem. */
+  overflow: hidden;
+  background-color: #04120a;
+  background-size: cover;
+  background-position: center;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -323,7 +372,7 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(8px);
   text-align: center;
-  max-width: min(86vw, 420px);
+  max-width: min(86%, 420px);
   pointer-events: none;
 }
 
@@ -366,7 +415,7 @@ onBeforeUnmount(() => {
 
 .card {
   position: relative;
-  width: min(92vw, 400px);
+  width: min(92%, 400px);
   border-radius: 22px;
   padding: 30px 26px 26px;
   text-align: center;
