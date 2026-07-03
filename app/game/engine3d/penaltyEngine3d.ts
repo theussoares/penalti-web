@@ -66,7 +66,10 @@ export class PenaltyEngine3D {
   private kicker: Character
   private keeper: Character
   private keeperDiveModel: KeeperDiveModel | null = null
+  /** Modelo real presente na cena (substituiu o procedural apos carregar). */
   private diveModelActive = false
+  /** Clipe de mergulho ja disparado neste lance. */
+  private divePlayed = false
 
   private resizeObserver: ResizeObserver | null = null
 
@@ -143,6 +146,14 @@ export class PenaltyEngine3D {
 
   private async loadDiveModelAsync() {
     this.keeperDiveModel = await loadKeeperDiveModel()
+    if (!this.keeperDiveModel || this.destroyed) return
+    // Modelo real assume o goleiro em todas as fases (idle em loop com o
+    // clipe base do .glb); o procedural fica so como fallback de carga.
+    this.scene.remove(this.keeper.object3D)
+    this.keeperDiveModel.object3D.position.copy(this.keeper.object3D.position)
+    this.scene.add(this.keeperDiveModel.object3D)
+    this.keeperDiveModel.playIdle()
+    this.diveModelActive = true
   }
 
   destroy() {
@@ -163,11 +174,9 @@ export class PenaltyEngine3D {
     this.ripples = []
     this.ballPos = { ...this.ballStart }
     this.kicker.object3D.position.set(this.kickerStartPos.x, 0, this.kickerStartPos.z)
-    if (this.diveModelActive && this.keeperDiveModel) {
-      this.scene.remove(this.keeperDiveModel.object3D)
-      this.scene.add(this.keeper.object3D)
-      this.diveModelActive = false
-    }
+    this.divePlayed = false
+    // Modelo real fica na cena; so volta do mergulho para o idle em loop.
+    if (this.diveModelActive) this.keeperDiveModel!.playIdle()
   }
 
   // ------------------------------------------------------------------
@@ -247,12 +256,13 @@ export class PenaltyEngine3D {
           0,
           this.kickerStartPos.z + (this.kickerKickPos.z - this.kickerStartPos.z) * rt
         )
-        this.keeper.update('idle', now, delta)
+        this.updateKeeperIdle(now, delta)
         if (t >= TIMINGS.runup) this.setState('strike')
         break
       }
       case 'strike':
         this.kicker.update('kick', Math.min(1, t / TIMINGS.strike), delta)
+        this.updateKeeperIdle(now, delta)
         if (t >= TIMINGS.strike) {
           this.cb.onKick?.()
           this.setState('flight')
@@ -264,14 +274,11 @@ export class PenaltyEngine3D {
         this.ballPos = ballFlightPosition(this.ballStart, this.ballEnd, ft, height)
         const divePhase = this.diveTarget.x < -0.3 ? 'diveLeft' : this.diveTarget.x > 0.3 ? 'diveRight' : 'diveCenter'
 
-        if (this.keeperDiveModel && !this.diveModelActive) {
-          this.diveModelActive = true
-          this.scene.remove(this.keeper.object3D)
-          this.keeperDiveModel.object3D.position.copy(this.keeper.object3D.position)
-          this.scene.add(this.keeperDiveModel.object3D)
-          this.keeperDiveModel.play(divePhase, TIMINGS.flight + TIMINGS.aftermath)
-        }
         if (this.diveModelActive) {
+          if (!this.divePlayed) {
+            this.divePlayed = true
+            this.keeperDiveModel!.play(divePhase, TIMINGS.flight + TIMINGS.aftermath)
+          }
           this.keeperDiveModel!.update(delta)
         } else {
           this.keeper.update(divePhase, ft, delta)
@@ -293,7 +300,7 @@ export class PenaltyEngine3D {
         break
       default:
         this.kicker.update('idle', now, delta)
-        this.keeper.update('idle', now, delta)
+        this.updateKeeperIdle(now, delta)
     }
 
     const aiming = this.state === 'aiming' && this.hasAim
@@ -307,6 +314,15 @@ export class PenaltyEngine3D {
     this.netMesh.update(this.ripples, now)
     this.ballMesh.position.set(this.ballPos.x, this.ballPos.y, this.ballPos.z)
     this.cameraRig.update(this.state, t, this.ballPos)
+  }
+
+  /** Goleiro parado: modelo real com o clipe base em loop, ou o procedural. */
+  private updateKeeperIdle(now: number, delta: number) {
+    if (this.diveModelActive) {
+      this.keeperDiveModel!.update(delta)
+    } else {
+      this.keeper.update('idle', now, delta)
+    }
   }
 
   private onBallArrive(now: number) {
