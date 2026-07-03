@@ -51,6 +51,9 @@ export class PenaltyEngine3D {
   private ballPos = { x: 0, y: 0.11, z: 0 }
   /** Velocidade da bola no pos-impacto (rebote/queda), em m/s. */
   private ballVel = { x: 0, y: 0, z: 0 }
+  /** Corrida de aproximacao do batedor: de onde parte e onde chuta. */
+  private kickerStartPos = { x: -1.7, z: 0 }
+  private kickerKickPos = { x: -0.35, z: 0 }
   private ripples: Ripple[] = []
   private resultSent = false
 
@@ -71,6 +74,11 @@ export class PenaltyEngine3D {
     this.layout = computeWorldLayout()
     this.ballStart = { x: 0, y: this.layout.ballRadius, z: this.layout.spotZ }
     this.ballPos = { ...this.ballStart }
+    // Aproximacao curta em diagonal: o suficiente para dar vida ao runup
+    // sem tirar o batedor do enquadramento (fov estreito) nem deixa-lo
+    // gigante na frente da camera.
+    this.kickerStartPos = { x: -1.7, z: this.layout.spotZ + 0.9 }
+    this.kickerKickPos = { x: -0.35, z: this.layout.spotZ + 0.35 }
 
     this.renderer = new WebGLRenderer({ canvas, antialias: false, powerPreference: 'low-power' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
@@ -107,7 +115,7 @@ export class PenaltyEngine3D {
     this.scene.add(this.crowd.mesh)
 
     this.kicker = createCharacter('kicker')
-    this.kicker.object3D.position.set(-1.7, 0, this.layout.spotZ + 0.9)
+    this.kicker.object3D.position.set(this.kickerStartPos.x, 0, this.kickerStartPos.z)
     this.scene.add(this.kicker.object3D)
 
     this.keeper = createCharacter('keeper')
@@ -149,6 +157,7 @@ export class PenaltyEngine3D {
     this.resultSent = false
     this.ripples = []
     this.ballPos = { ...this.ballStart }
+    this.kicker.object3D.position.set(this.kickerStartPos.x, 0, this.kickerStartPos.z)
     if (this.diveModelActive && this.keeperDiveModel) {
       this.scene.remove(this.keeperDiveModel.object3D)
       this.scene.add(this.keeper.object3D)
@@ -225,11 +234,18 @@ export class PenaltyEngine3D {
     const t = this.stateT(now)
 
     switch (this.state) {
-      case 'runup':
-        this.kicker.update('runup', Math.min(1, t / TIMINGS.runup), delta)
+      case 'runup': {
+        const rt = Math.min(1, t / TIMINGS.runup)
+        this.kicker.update('runup', rt, delta)
+        this.kicker.object3D.position.set(
+          this.kickerStartPos.x + (this.kickerKickPos.x - this.kickerStartPos.x) * rt,
+          0,
+          this.kickerStartPos.z + (this.kickerKickPos.z - this.kickerStartPos.z) * rt
+        )
         this.keeper.update('idle', now, delta)
         if (t >= TIMINGS.runup) this.setState('strike')
         break
+      }
       case 'strike':
         this.kicker.update('kick', Math.min(1, t / TIMINGS.strike), delta)
         if (t >= TIMINGS.strike) {
