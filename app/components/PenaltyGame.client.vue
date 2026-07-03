@@ -2,9 +2,9 @@
 import { PenaltyEngine3D } from '~/game/engine3d/penaltyEngine3d'
 import type { ShotOutcome, EngineState } from '~/game/types'
 import { Sfx } from '~/game/sfx'
-import type { GameInfo, Prize } from '~/composables/useGameApi'
+import type { GameInfo, PenaltyPlayResult } from '~/composables/useGameApi'
 
-const { fetchGames, submitPlay, formatMoney } = useGameApi()
+const { fetchGames, fetchPlaySequence } = useGameApi()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const engineState = ref<EngineState>('ready')
@@ -32,55 +32,68 @@ function updateLayoutMode() {
       ? { width: vh * ratio, height: vh }
       : { width: vw, height: vw / ratio }
 }
+
 const game = ref<GameInfo | null>(null)
-const prize = ref<Prize | null>(null)
 const modal = ref<'none' | 'win' | 'lose'>('none')
-const loseReason = ref<'save' | 'out'>('save')
+const prizeResult = ref<PenaltyPlayResult | null>(null)
 const muted = ref(false)
 const attempts = ref(0)
 const goals = ref(0)
-const displayAmount = ref(0)
+const awaitingSequence = ref(false)
 
 let engine: PenaltyEngine3D | null = null
 const sfx = new Sfx()
-let countUpRaf = 0
 
-const hintVisible = computed(
-  () => modal.value === 'none' && (engineState.value === 'ready' || engineState.value === 'aiming')
-)
+// Sequencia de resultados ja decididos pela API — consumida um item por
+// chute. So ha espera visivel no primeiro chute da sessao; depois disso a
+// fila e reabastecida em segundo plano (maybeRefill), sem o jogador notar.
+const SEQUENCE_BATCH_SIZE = 10
+const REFILL_THRESHOLD = 3
+let playQueue: PenaltyPlayResult[] = []
+let refillPromise: Promise<void> | null = null
+let currentPlayResult: PenaltyPlayResult | null = null
+
+function maybeRefill(gameId: string) {
+  if (playQueue.length >= REFILL_THRESHOLD || refillPromise) return
+  refillPromise = fetchPlaySequence(gameId, SEQUENCE_BATCH_SIZE).then((more) => {
+    playQueue.push(...more)
+    refillPromise = null
+  })
+}
+
+async function nextPlayResult(gameId: string): Promise<PenaltyPlayResult> {
+  if (playQueue.length === 0) {
+    playQueue = await fetchPlaySequence(gameId, SEQUENCE_BATCH_SIZE)
+  }
+  const result = playQueue.shift()!
+  maybeRefill(gameId)
+  return result
+}
+
+async function onShootClick() {
+  if (!engine || awaitingSequence.value) return
+  const gameId = game.value?.id ?? 'penalty-premiado'
+  if (playQueue.length === 0) awaitingSequence.value = true
+  const result = await nextPlayResult(gameId)
+  awaitingSequence.value = false
+  currentPlayResult = result
+  engine.shoot(result.tipo_acao === 'ganhou' ? 'goal' : 'save')
+}
 
 function onResult(outcome: ShotOutcome) {
   attempts.value++
   if (outcome === 'goal') {
     goals.value++
-    void submitPlay(game.value?.id ?? 'penalty-premiado', outcome).then((p) => {
-      prize.value = p
-      modal.value = 'win'
-      if (p?.type === 'money' && p.amountCents) startCountUp(p.amountCents)
-    })
+    prizeResult.value = currentPlayResult
+    modal.value = 'win'
   } else {
-    loseReason.value = outcome
     modal.value = 'lose'
   }
 }
 
-function startCountUp(target: number) {
-  cancelAnimationFrame(countUpRaf)
-  displayAmount.value = 0
-  const start = performance.now()
-  const dur = 1200
-  const tick = (now: number) => {
-    const t = Math.min(1, (now - start) / dur)
-    const eased = 1 - Math.pow(1 - t, 3)
-    displayAmount.value = Math.round(target * eased)
-    if (t < 1) countUpRaf = requestAnimationFrame(tick)
-  }
-  countUpRaf = requestAnimationFrame(tick)
-}
-
 function retry() {
   modal.value = 'none'
-  prize.value = null
+  prizeResult.value = null
   engine?.reset()
   sfx.whistle()
 }
@@ -110,7 +123,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateLayoutMode)
-  cancelAnimationFrame(countUpRaf)
   engine?.destroy()
   sfx.destroy()
 })
@@ -152,11 +164,12 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <!-- Dica de jogo -->
+    <!-- Botao de chute -->
     <Transition name="fade">
-      <div v-if="hintVisible" class="hint">
-        <span class="hint-badge">Sua vez</span>
-        <p>Toque no gol para mirar, arraste para ajustar e solte para chutar</p>
+      <div v-if="modal === 'none' && (engineState === 'ready' || engineState === 'aiming')" class="hint">
+        <button class="hint-badge shoot-btn" type="button" :disabled="awaitingSequence" @click="onShootClick">
+          {{ awaitingSequence ? 'Carregando...' : 'Chutar' }}
+        </button>
       </div>
     </Transition>
 
@@ -177,27 +190,9 @@ onBeforeUnmount(() => {
           <h2 class="card-title">GOOOL!</h2>
           <p class="card-sub">Voce venceu o goleiro</p>
 
-          <div v-if="prize?.type === 'money'" class="prize prize-money">
+          <div class="prize">
             <span class="prize-label">Voce ganhou</span>
-            <strong class="prize-value">{{ formatMoney(displayAmount) }}</strong>
-            <span v-if="prize.campaign" class="prize-campaign">{{ prize.campaign }}</span>
-          </div>
-
-          <div v-else-if="prize?.type === 'lucky-numbers'" class="prize prize-numbers">
-            <span class="prize-label">Seus numeros da sorte</span>
-            <div class="numbers">
-              <span
-                v-for="(n, i) in prize.numbers"
-                :key="n"
-                class="number-chip"
-                :style="{ animationDelay: `${0.35 + i * 0.18}s` }"
-              >{{ n }}</span>
-            </div>
-            <span v-if="prize.campaign" class="prize-campaign">{{ prize.campaign }}</span>
-          </div>
-
-          <div v-else class="prize">
-            <span class="prize-label">Registrando seu premio...</span>
+            <strong class="prize-value">{{ prizeResult?.nome }}</strong>
           </div>
 
           <button class="btn btn-primary" type="button" @click="retry">Jogar novamente</button>
@@ -210,19 +205,13 @@ onBeforeUnmount(() => {
       <div v-if="modal === 'lose'" class="overlay" role="dialog" aria-modal="true" aria-label="Nao foi dessa vez">
         <div class="card card-lose">
           <div class="badge badge-lose">
-            <svg v-if="loseReason === 'save'" viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 3c3.5 0 6 2 6 5.5V13a6 6 0 0 1-12 0V8.5C6 5 8.5 3 12 3Z" />
               <path d="M9 7v4M12 6.5V11M15 7v4" />
             </svg>
-            <svg v-else viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M15 9l-6 6M9 9l6 6" />
-            </svg>
           </div>
-          <h2 class="card-title">{{ loseReason === 'save' ? 'Defendeu!' : 'Pra fora!' }}</h2>
-          <p class="card-sub">
-            {{ loseReason === 'save' ? 'O goleiro voou no canto certo.' : 'A bola passou longe do gol.' }}
-          </p>
+          <h2 class="card-title">Defendeu!</h2>
+          <p class="card-sub">O goleiro voou no canto certo.</p>
           <p class="card-encourage">Respira, ajusta a mira e manda de novo.</p>
           <button class="btn btn-primary" type="button" @click="retry">Tentar novamente</button>
         </div>
@@ -267,7 +256,6 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   display: block;
-  cursor: crosshair;
 }
 
 /* ------------------------------ HUD ------------------------------ */
@@ -355,44 +343,44 @@ onBeforeUnmount(() => {
   transform: scale(0.92);
 }
 
-/* ------------------------------ Dica ------------------------------ */
+/* ------------------------------ Botao de chute ------------------------------ */
 
 .hint {
   position: absolute;
   left: 50%;
   bottom: calc(18px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 18px;
-  border-radius: 14px;
-  background: rgba(4, 14, 9, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(8px);
-  text-align: center;
-  max-width: min(86%, 420px);
   pointer-events: none;
 }
 
 .hint-badge {
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #04120a;
   background: #8dff5a;
-  padding: 3px 10px;
+  padding: 12px 34px;
   border-radius: 999px;
   animation: hint-pulse 1.6s ease-in-out infinite;
 }
 
-.hint p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
-  color: rgba(255, 255, 255, 0.9);
+.shoot-btn {
+  pointer-events: auto;
+  border: 0;
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(141, 255, 90, 0.32);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.shoot-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.shoot-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  animation: none;
 }
 
 @keyframes hint-pulse {
@@ -625,11 +613,10 @@ onBeforeUnmount(() => {
 }
 
 .prize-value {
-  font-size: 38px;
+  font-size: 32px;
   font-weight: 900;
   color: #8dff5a;
   text-shadow: 0 0 24px rgba(141, 255, 90, 0.35);
-  font-variant-numeric: tabular-nums;
   animation: value-pop 0.5s cubic-bezier(0.34, 1.5, 0.64, 1) 0.55s both, value-glow 2.2s ease-in-out 1.1s infinite;
 }
 
@@ -641,38 +628,6 @@ onBeforeUnmount(() => {
 @keyframes value-glow {
   0%, 100% { text-shadow: 0 0 24px rgba(141, 255, 90, 0.35); }
   50% { text-shadow: 0 0 38px rgba(141, 255, 90, 0.65); }
-}
-
-.prize-campaign {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.numbers {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 4px;
-}
-
-.number-chip {
-  display: inline-block;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 19px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  color: #04120a;
-  background: linear-gradient(160deg, #b6ff8f, #8dff5a 55%, #55d02e);
-  box-shadow: 0 6px 18px rgba(141, 255, 90, 0.3);
-  font-variant-numeric: tabular-nums;
-  animation: chip-flip 0.55s cubic-bezier(0.34, 1.4, 0.64, 1) both;
-}
-
-@keyframes chip-flip {
-  0% { transform: rotateX(90deg) translateY(10px); opacity: 0; }
-  100% { transform: rotateX(0deg) translateY(0); opacity: 1; }
 }
 
 .btn {
@@ -755,10 +710,6 @@ onBeforeUnmount(() => {
 @media (min-width: 900px) {
   .hud {
     padding: 16px 24px;
-  }
-
-  .hint p {
-    font-size: 14px;
   }
 }
 </style>
