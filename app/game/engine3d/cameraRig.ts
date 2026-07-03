@@ -10,8 +10,8 @@ export interface CameraRig {
 // Elevada e bem atras da marca do penalti, olhando um pouco para baixo —
 // angulo que mostra o gramado (linhas da area, bola, batedor) e mantem o
 // batedor pequeno no rodape, como no enquadramento do motor 2D.
-const BASE_POSITION = new Vector3(0, 3.0, 18)
-const LOOK_AT_GOAL = new Vector3(0, 1.0, 0)
+const BASE_POSITION = new Vector3(0, 3.4, 18)
+const LOOK_AT_GOAL = new Vector3(0, 0.95, 0)
 
 /**
  * Camera estatica atras do batedor, sempre apontada para o gol — sem

@@ -51,19 +51,20 @@ function buildPitchTexture(
   const pxPerMeterX = cw / width
   const pxPerMeterY = ch / depth
 
-  // Listras horizontais alternadas (paralelas a linha do gol).
-  ctx.fillStyle = '#2b8a3c'
+  // Listras horizontais alternadas (paralelas a linha do gol), saturadas
+  // como na arte 2D.
+  ctx.fillStyle = '#2e9440'
   ctx.fillRect(0, 0, cw, ch)
   for (let z = farZ, i = 0; z < nearZ; z += STRIPE_DEPTH, i++) {
     if (i % 2 === 0) continue
-    ctx.fillStyle = '#41b25a'
+    ctx.fillStyle = '#4abd63'
     ctx.fillRect(0, toY(z), cw, STRIPE_DEPTH * pxPerMeterY + 1)
   }
 
   // Linhas bem mais grossas que os 13cm oficiais: no angulo rasante da
   // camera a espessura real viraria 1-2px e sumiria — a arte 2D de
   // referencia tambem usa linhas exageradas.
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+  ctx.strokeStyle = '#ffffff'
   ctx.lineWidth = 0.6 * pxPerMeterY
 
   // Linha do gol.

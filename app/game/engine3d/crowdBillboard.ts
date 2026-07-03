@@ -73,7 +73,8 @@ function buildCrowdCanvas(variant: number): HTMLCanvasElement {
   for (let r = 0; r < ROWS; r++) {
     const t = r / (ROWS - 1)
     const y = (t * CANVAS_H) + CANVAS_H / ROWS / 2
-    const bodySize = 7 + t * 4
+    // Fileiras de baixo maiores (mais proximas), como arquibancada real.
+    const bodySize = 6 + t * 6
     const step = bodySize * 2.1
     for (let x = step / 2 + (r % 2) * step * 0.5; x < CANVAS_W; x += step) {
       const bob = variant === 1 && rand() > 0.5 ? -bodySize * 0.45 : 0
@@ -88,15 +89,32 @@ function buildCrowdCanvas(variant: number): HTMLCanvasElement {
     }
   }
 
-  // Divisao entre aneis da arquibancada (passarela escura no meio), como
-  // nos estadios da arte 2D de referencia.
-  const walkwayY = CANVAS_H * 0.46
+  // Fascia entre os aneis da arquibancada com "PREMIADO" em neon, como na
+  // arte 2D de referencia.
+  const walkwayY = CANVAS_H * 0.44
+  const walkwayH = CANVAS_H * 0.08
   ctx.fillStyle = '#0d1120'
-  ctx.fillRect(0, walkwayY, CANVAS_W, CANVAS_H * 0.045)
+  ctx.fillRect(0, walkwayY, CANVAS_W, walkwayH)
+  const NEON_COLORS = ['#38bdf8', '#facc15', '#4ade80', '#facc15', '#38bdf8']
+  ctx.font = 'bold 26px system-ui, sans-serif'
+  ctx.textBaseline = 'middle'
+  const step = CANVAS_W / NEON_COLORS.length
+  for (let i = 0; i < NEON_COLORS.length; i++) {
+    ctx.fillStyle = NEON_COLORS[i]!
+    ctx.shadowColor = NEON_COLORS[i]!
+    ctx.shadowBlur = 14
+    const textWidth = ctx.measureText('PREMIADO').width
+    ctx.fillText('PREMIADO', i * step + (step - textWidth) / 2, walkwayY + walkwayH / 2)
+  }
+  ctx.shadowBlur = 0
 
-  // Veu escuro por cima: arquibancada a meia-luz, como na arte 2D — a
-  // torcida ambienta sem competir com o gol e os jogadores.
-  ctx.fillStyle = 'rgba(10, 14, 26, 0.3)'
+  // Sombreamento vertical: topo mais escuro (longe dos refletores), base
+  // mais viva — arquibancada a meia-luz sem competir com o gol.
+  const shade = ctx.createLinearGradient(0, 0, 0, CANVAS_H)
+  shade.addColorStop(0, 'rgba(6, 9, 18, 0.5)')
+  shade.addColorStop(0.5, 'rgba(10, 14, 26, 0.28)')
+  shade.addColorStop(1, 'rgba(10, 14, 26, 0.16)')
+  ctx.fillStyle = shade
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
 
   return canvas

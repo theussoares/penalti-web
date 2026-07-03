@@ -127,6 +127,8 @@ export class PenaltyEngine3D {
     const crowdZ = this.layout.goalLineZ - this.layout.goalDepth - 1.6
     this.crowd = buildCrowdBillboard(sceneryWidth, 5.5)
     this.crowd.mesh.position.set(0, 1.0 + 2.75, crowdZ)
+    // Topo levemente reclinado para tras, como o rake de arquibancada real.
+    this.crowd.mesh.rotation.x = -0.12
     this.scene.add(this.crowd.mesh)
 
     this.scene.add(buildStadiumLights(sceneryWidth, 1.0 + 5.5 + 0.2, crowdZ + 0.05))
