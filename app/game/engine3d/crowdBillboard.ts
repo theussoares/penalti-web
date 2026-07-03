@@ -40,7 +40,11 @@ export function buildCrowdBillboard(width: number, height: number): CrowdBillboa
     setExcitement(value, now) {
       const speed = value > 0 ? 9 : 2.2
       const phase = (Math.sin(now * speed) + 1) / 2
-      materialB.opacity = Math.min(1, Math.max(0, phase)) * (value > 0 ? 1 : 0.55)
+      const opacityB = Math.min(1, Math.max(0, phase)) * (value > 0 ? 1 : 0.55)
+      // Crossfade simetrico: A cai conforme B sobe, para nao depender dos
+      // vaos transparentes entre as figuras de A para revelar B por baixo.
+      materialB.opacity = opacityB
+      materialA.opacity = 1 - opacityB
     }
   }
 }
