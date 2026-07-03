@@ -303,22 +303,27 @@ onBeforeUnmount(() => {
 }
 
 .confetti-piece {
+  /* Posicao de partida fixa (nao anima) — so `transform`/`opacity` mudam a
+     cada frame, que o navegador compoe direto na GPU sem re-layout. Animar
+     `top` aqui forcava reflow por peca por frame, por cima do canvas WebGL
+     ja rodando a 60fps — foi isso que derrubou a performance. */
   position: absolute;
   top: -8%;
   width: 6px;
   height: 12px;
   border-radius: 1px;
   opacity: 0;
+  will-change: transform, opacity;
   animation-name: confetti-fall;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
 }
 
 @keyframes confetti-fall {
-  0% { top: -8%; opacity: 0; transform: translateX(0) rotate(0deg); }
+  0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(0deg); }
   8% { opacity: 0.9; }
   92% { opacity: 0.9; }
-  100% { top: 104%; opacity: 0; transform: translateX(var(--drift)) rotate(480deg); }
+  100% { opacity: 0; transform: translate3d(var(--drift), 120vh, 0) rotate(480deg); }
 }
 
 /* ------------------------------ Telao ------------------------------ */
