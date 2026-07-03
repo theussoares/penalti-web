@@ -3,8 +3,8 @@ import type { EngineState, ShotOutcome } from './types'
 
 describe('types compartilhados', () => {
   it('aceita os valores validos de ShotOutcome', () => {
-    const outcomes: ShotOutcome[] = ['goal', 'save', 'out']
-    expect(outcomes).toHaveLength(3)
+    const outcomes: ShotOutcome[] = ['goal', 'save']
+    expect(outcomes).toHaveLength(2)
   })
 
   it('aceita os valores validos de EngineState', () => {

@@ -16,6 +16,8 @@ export interface WorldLayout {
   goalLineZ: number
   spotZ: number
   ballRadius: number
+  /** Altura fixa (eixo Y) da mira automatica e do mergulho "certeiro" do goleiro. */
+  keeperHeight: number
   aimBounds: AimBounds
 }
 
@@ -23,6 +25,7 @@ const GOAL_WIDTH = 7.32
 const GOAL_HEIGHT = 2.44
 const PENALTY_SPOT_DISTANCE = 11
 const AIM_MARGIN = 0.22
+const KEEPER_HEIGHT = 1.3
 
 export function computeWorldLayout(): WorldLayout {
   const goalCenterX = 0
@@ -36,6 +39,7 @@ export function computeWorldLayout(): WorldLayout {
     goalLineZ,
     spotZ: goalLineZ + PENALTY_SPOT_DISTANCE,
     ballRadius: 0.11,
+    keeperHeight: KEEPER_HEIGHT,
     aimBounds: {
       minX: goalCenterX - GOAL_WIDTH / 2 + AIM_MARGIN,
       maxX: goalCenterX + GOAL_WIDTH / 2 - AIM_MARGIN,

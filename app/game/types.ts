@@ -2,7 +2,7 @@
  * Tipos compartilhados entre o motor 2D (engine.ts) e o motor 3D (engine3d/*).
  */
 
-export type ShotOutcome = 'goal' | 'save' | 'out'
+export type ShotOutcome = 'goal' | 'save'
 
 export type EngineState =
   | 'ready'

@@ -20,6 +20,12 @@ describe('computeWorldLayout', () => {
     expect(layout.aimBounds.minY).toBeGreaterThan(0)
     expect(layout.aimBounds.maxY).toBeLessThan(layout.goalHeight)
   })
+
+  it('define keeperHeight dentro dos limites verticais do gol', () => {
+    const layout = computeWorldLayout()
+    expect(layout.keeperHeight).toBeGreaterThan(layout.aimBounds.minY)
+    expect(layout.keeperHeight).toBeLessThan(layout.aimBounds.maxY)
+  })
 })
 
 describe('clampAim', () => {
