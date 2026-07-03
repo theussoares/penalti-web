@@ -65,9 +65,7 @@ const premiosChutarTudo = ref<PremioGanho[]>([]);
 let engine: PenaltyEngine3D | null = null;
 const sfx = new Sfx();
 
-const chancesRestantesValue = computed(() =>
-  chancesRestantes(playQueue.value),
-);
+const chancesRestantesValue = computed(() => chancesRestantes(playQueue.value));
 const sessaoEncerrada = computed(
   () => sessionStarted.value && isSessionOver(playQueue.value),
 );
@@ -368,9 +366,9 @@ onBeforeUnmount(() => {
 .jumbotron {
   position: absolute;
   left: 50%;
-  top: 20%;
+  top: 45px;
   width: 100%;
-  height: 8%;
+  height: 14%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -378,7 +376,7 @@ onBeforeUnmount(() => {
 }
 
 .jumbotron-logo {
-  width: 100%;
+  width: 800px;
   height: 100%;
   object-fit: contain;
   filter: drop-shadow(0 0 10px rgba(255, 210, 63, 0.35));
@@ -387,7 +385,7 @@ onBeforeUnmount(() => {
 .chances-hud {
   position: absolute;
   left: 50%;
-  top: 29%;
+  top: 31%;
   transform: translateX(-50%);
   padding: 4px 14px;
   border-radius: 999px;
