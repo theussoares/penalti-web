@@ -85,7 +85,7 @@ function buildSmoke(layout: WorldLayout): { group: Group; update(now: number): v
       phase: randomRange(0, Math.PI * 2),
       // Quase imperceptivel de proposito — reforca profundidade atras do
       // gol sem competir visualmente com o telao/torcida da foto.
-      peakOpacity: randomRange(0.06, 0.1)
+      peakOpacity: randomRange(0, 0)
     })
   }
 
@@ -100,7 +100,7 @@ function buildSmoke(layout: WorldLayout): { group: Group; update(now: number): v
       const sway = Math.sin(t * 1.7) * motion.swayAmplitude
 
       motion.sprite.position.set(motion.baseX + sway, motion.baseY + rise, motion.baseZ)
-      ;(motion.sprite.material as MeshBasicMaterial).opacity = fade * motion.peakOpacity
+        ; (motion.sprite.material as MeshBasicMaterial).opacity = fade * motion.peakOpacity
     }
   }
 
@@ -180,11 +180,11 @@ function buildFlags(layout: WorldLayout): { group: Group; update(now: number): v
   const z = -1.0
 
   const motions: FlagMotion[] = []
-  ;[-halfWidth, halfWidth].forEach((x, i) => {
-    const { group: flagGroup, motion } = buildCornerFlag(x, z, FLAG_COLORS[i % FLAG_COLORS.length]!)
-    group.add(flagGroup)
-    motions.push(motion)
-  })
+    ;[-halfWidth, halfWidth].forEach((x, i) => {
+      const { group: flagGroup, motion } = buildCornerFlag(x, z, FLAG_COLORS[i % FLAG_COLORS.length]!)
+      group.add(flagGroup)
+      motions.push(motion)
+    })
 
   function update(now: number) {
     for (const motion of motions) {

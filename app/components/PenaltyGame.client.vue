@@ -8,14 +8,12 @@ const { fetchGames, fetchPlaySequence } = useGameApi();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const engineState = ref<EngineState>("ready");
-// Fundo de estadio gerado por IA: retrato para celular, paisagem para
-// desktop. A proporcao da cena fica travada na proporcao da imagem para o
-// gol/goleiro 3D (renderizados por cima, canvas transparente) baterem
-// certinho com o gramado da foto em qualquer tamanho de tela.
-const PORTRAIT_ASPECT = 853 / 1844;
-const LANDSCAPE_ASPECT = 1536 / 1024;
+// Fundo de estadio gerado por IA: retrato para celular (ate 565px de
+// largura), paisagem para desktop (acima disso). Ambos sempre ocupam 100%
+// da viewport (background-size: cover cropa o que sobrar) — sem travar
+// proporcao nem pillarbox/letterbox.
+const DESKTOP_BREAKPOINT = 565;
 const isDesktopLayout = ref(false);
-const stageSize = ref({ width: 0, height: 0 });
 const bgImage = computed(() =>
   isDesktopLayout.value
     ? "/images/stadium-bg-landscape.webp"
@@ -23,29 +21,8 @@ const bgImage = computed(() =>
 );
 
 function updateLayoutMode() {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  isDesktopLayout.value = vw / vh >= 1;
-  const ratio = isDesktopLayout.value ? LANDSCAPE_ASPECT : PORTRAIT_ASPECT;
-  // Encaixa a proporcao travada da imagem dentro da viewport: usa a
-  // dimensao que "sobra" como barra (pillarbox/letterbox), sem esticar.
-  stageSize.value =
-    vw / vh > ratio
-      ? { width: vh * ratio, height: vh }
-      : { width: vw, height: vw / ratio };
+  isDesktopLayout.value = window.innerWidth > DESKTOP_BREAKPOINT;
 }
-
-// Confete decorativo continuo (telao + arquibancada da foto de fundo) —
-// espalhamento deterministico via aritmetica modular, sem Math.random(),
-// pra nao gerar layout diferente a cada re-render.
-const CONFETTI_COLORS = ["#8dff5a", "#ffd23f", "#38bdf8", "#ffffff"];
-const confettiPieces = Array.from({ length: 18 }, (_, i) => ({
-  left: (i * 37) % 100,
-  delay: -((i * 1.3) % 7),
-  duration: 5 + (i % 5) * 0.7,
-  drift: `${(i % 2 === 0 ? 1 : -1) * (20 + (i % 4) * 10)}px`,
-  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
-}));
 
 const game = ref<GameInfo | null>(null);
 const modal = ref<"none" | "win" | "lose">("none");
@@ -55,33 +32,6 @@ const attempts = ref(0);
 const goals = ref(0);
 const awaitingSequence = ref(false);
 const lastOutcome = ref<ShotOutcome | null>(null);
-
-// Cor dos LEDs do perimetro, sincronizada com o lance — a faixa ja vem
-// verde pintada na foto de fundo; um overlay com mix-blend-mode: hue (ver
-// .led-strip) troca so o matiz, mantendo o brilho/textura das luzes.
-const LED_COLORS = {
-  normal: "#5eff6c",
-  aiming: "#ffd23f",
-  shooting: "#ff8c1a",
-  goal: "#5eff6c",
-  save: "#ff3b3b",
-};
-const ledColor = computed(() => {
-  if (
-    engineState.value === "runup" ||
-    engineState.value === "strike" ||
-    engineState.value === "flight"
-  ) {
-    return LED_COLORS.shooting;
-  }
-  if (engineState.value === "aftermath" || engineState.value === "done") {
-    return lastOutcome.value === "goal" ? LED_COLORS.goal : LED_COLORS.save;
-  }
-  if (engineState.value === "aiming") {
-    return LED_COLORS.aiming;
-  }
-  return LED_COLORS.normal;
-});
 
 let engine: PenaltyEngine3D | null = null;
 const sfx = new Sfx();
@@ -175,31 +125,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="stage-viewport">
-    <div
-      class="stage"
-      :style="{
-        width: `${stageSize.width}px`,
-        height: `${stageSize.height}px`,
-        backgroundImage: `url(${bgImage})`,
-      }"
-    >
+    <div class="stage" :style="{ backgroundImage: `url(${bgImage})` }">
       <canvas ref="canvasRef" class="game-canvas" />
-
-      <!-- Confete continuo, sutil, por cima da foto de fundo -->
-      <!-- <div class="confetti-layer" aria-hidden="true">
-      <span
-        v-for="(piece, i) in confettiPieces"
-        :key="i"
-        class="confetti-piece"
-        :style="{
-          left: `${piece.left}%`,
-          animationDelay: `${piece.delay}s`,
-          animationDuration: `${piece.duration}s`,
-          '--drift': piece.drift,
-          backgroundColor: piece.color
-        }"
-      />
-    </div> -->
 
       <!-- Telao central: usa o quadro ja pintado na foto de fundo -->
       <div class="jumbotron" aria-hidden="true">
@@ -210,58 +137,41 @@ onBeforeUnmount(() => {
         />
       </div>
 
-      <!-- LEDs do perimetro: recolore a faixa verde ja pintada na foto
-           conforme o estado do lance (ver ledColor). -->
-      <div
-        class="led-strip"
-        aria-hidden="true"
-        :style="{ backgroundColor: ledColor }"
-      />
-
       <!-- HUD -->
       <header class="hud">
-        <div class="hud-title">
-          <h1>{{ game?.name ?? "Penalti Premiado" }}</h1>
-          <p v-if="game">{{ game.headline }}</p>
-        </div>
-        <div class="hud-right">
-          <div class="scoreboard" aria-label="Placar">
-            <span class="score-goals">{{ goals }}</span>
-            <span class="score-sep">gols</span>
-            <span class="score-attempts">{{ attempts }} chutes</span>
-          </div>
-          <button
-            class="mute-btn"
-            type="button"
-            :aria-label="muted ? 'Ativar som' : 'Desativar som'"
-            @click="toggleMute"
+        <button
+          class="mute-btn"
+          type="button"
+          :aria-label="muted ? 'Ativar som' : 'Desativar som'"
+          @click="toggleMute"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="20"
+            height="20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
           >
-            <svg
-              viewBox="0 0 24 24"
-              width="20"
-              height="20"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polygon
-                points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"
-                fill="currentColor"
-                stroke="none"
-              />
-              <template v-if="!muted">
-                <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-                <path d="M18.5 5.5a9 9 0 0 1 0 13" />
-              </template>
-              <template v-else>
-                <line x1="15" y1="9" x2="21" y2="15" />
-                <line x1="21" y1="9" x2="15" y2="15" />
-              </template>
-            </svg>
-          </button>
-        </div>
+            <polygon
+              points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"
+              fill="currentColor"
+              stroke="none"
+            />
+            <template v-if="!muted">
+              <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+              <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+            </template>
+            <template v-else>
+              <line x1="15" y1="9" x2="21" y2="15" />
+              <line x1="21" y1="9" x2="15" y2="15" />
+            </template>
+          </svg>
+        </button>
+
+        <button>Sair</button>
       </header>
 
       <!-- Botao de chute -->
@@ -383,11 +293,11 @@ onBeforeUnmount(() => {
 
 .stage {
   position: relative;
-  /* Largura/altura calculadas em JS (updateLayoutMode) para travar a
-     proporcao da imagem de fundo dentro da viewport, com barra de
-     pillarbox/letterbox em vez de esticar — o gol/goleiro 3D (canvas
-     transparente por cima) so bate certo com o gramado da foto se essa
-     caixa mantiver a proporcao exata da imagem. */
+  /* Sempre 100% da viewport — sem trava de proporcao nem pillarbox. Abaixo
+     de DESKTOP_BREAKPOINT usa a imagem retrato, acima a paisagem; em ambos
+     os casos background-size:cover cropa o que sobrar. */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background-color: #04120a;
   background-size: cover;
@@ -400,6 +310,7 @@ onBeforeUnmount(() => {
 .game-canvas {
   position: absolute;
   inset: 0;
+  top: 10px;
   /* inset nao estica elementos replaced (canvas fica no tamanho do buffer
      do renderer, 1.5x maior que a tela) — precisa do 100% explicito. */
   width: 100%;
@@ -407,56 +318,13 @@ onBeforeUnmount(() => {
   display: block;
 }
 
-/* ------------------------------ Confete ------------------------------ */
-
-.confetti-layer {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.confetti-piece {
-  /* Posicao de partida fixa (nao anima) — so `transform`/`opacity` mudam a
-     cada frame, que o navegador compoe direto na GPU sem re-layout. Animar
-     `top` aqui forcava reflow por peca por frame, por cima do canvas WebGL
-     ja rodando a 60fps — foi isso que derrubou a performance. */
-  position: absolute;
-  top: -8%;
-  width: 6px;
-  height: 12px;
-  border-radius: 1px;
-  opacity: 0;
-  will-change: transform, opacity;
-  animation-name: confetti-fall;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-
-@keyframes confetti-fall {
-  0% {
-    opacity: 0;
-    transform: translate3d(0, 0, 0) rotate(0deg);
-  }
-  8% {
-    opacity: 0.9;
-  }
-  92% {
-    opacity: 0.9;
-  }
-  100% {
-    opacity: 0;
-    transform: translate3d(var(--drift), 120vh, 0) rotate(480deg);
-  }
-}
-
 /* ------------------------------ Telao ------------------------------ */
 
 .jumbotron {
   position: absolute;
   left: 50%;
-  top: 29.6%;
-  width: 30%;
+  top: 20%;
+  width: 100%;
   height: 8%;
   transform: translateX(-50%);
   display: flex;
@@ -471,23 +339,6 @@ onBeforeUnmount(() => {
   filter: drop-shadow(0 0 10px rgba(255, 210, 63, 0.35));
 }
 
-/* ------------------------------ LEDs do perimetro ------------------------------ */
-
-.led-strip {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 49.3%;
-  height: 2%;
-  /* screen soma luz sobre o que ja esta pintado na foto (as luzes verdes),
-     preservando a textura das estrelas/chevrons por baixo — troca de
-     estado sem redesenhar nada. hue/color blend ficaram apagados demais
-     nesta imagem, screen foi o unico que leu bem em todas as cores. */
-  mix-blend-mode: screen;
-  pointer-events: none;
-  transition: background-color 0.25s ease;
-}
-
 /* ------------------------------ HUD ------------------------------ */
 
 .hud {
@@ -495,6 +346,7 @@ onBeforeUnmount(() => {
   top: 0;
   left: 0;
   right: 0;
+  width: 100%;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -502,28 +354,6 @@ onBeforeUnmount(() => {
   padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
   pointer-events: none;
   background: linear-gradient(180deg, rgba(2, 8, 16, 0.72), rgba(2, 8, 16, 0));
-}
-
-.hud-title h1 {
-  margin: 0;
-  font-size: clamp(15px, 4.2vw, 22px);
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #ffd23f;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-}
-
-.hud-title p {
-  margin: 2px 0 0;
-  font-size: clamp(11px, 3vw, 13px);
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.hud-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .scoreboard {
