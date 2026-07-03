@@ -1227,113 +1227,133 @@ git commit --no-gpg-sign -m "feat: adiciona conversao de toque em coordenada de 
 
 ### Task 12: Compressão do asset real do goleiro (mergulho)
 
-O usuário forneceu um `.glb` real do goleiro mergulhando e defendendo (fonte:
-Mixamo, convertido via Blender), colocado na raiz do projeto como
-`Goalkeeper Diving Save (1).glb`. Tem 1 animação (`Armature|mixamo.com|Base
-Layer`, 3.27s), rig padrão Mixamo (`mixamorig:...`, 65 ossos), mas **10.6MB**
-no total — **8.5MB só de 4 texturas PNG**. Precisa ser comprimido antes de
+**Status: já executada uma vez (commit `3cf70c6`) contra `Goalkeeper Diving
+Save (1).glb` (1 clipe só). O usuário forneceu depois um arquivo melhor,
+`goleiro_final.glb`, que substitui aquele. Esta versão da task recomprime o
+arquivo novo — o resultado da execução anterior (o `.glb` de 427KB baseado
+no arquivo antigo) é substituído.**
+
+`goleiro_final.glb` (gerado com `glTF-Transform v4.4.1`, então já passou por
+alguma etapa de processamento, mas as texturas continuam em PNG sem
+compressão) tem **4 animações num só arquivo**: `Armature|mixamo.com|Base
+Layer` (clipe base/generico), `DiveLeft`, `DiveRight`, `CatchCenter` — rig
+padrão Mixamo (`mixamorig:...`, 65 ossos, 7 meshes). Tamanho: **9.78MB**,
+dominado por 3 texturas PNG (~7.26MB). Precisa ser comprimido antes de
 entrar no jogo (meta acordada com o usuário: ~500KB-1MB final).
 
 **Files:**
-- Move: `Goalkeeper Diving Save (1).glb` (raiz do projeto) → `raw-assets/goalkeeper-diving-save.glb`
-- Modify: `.gitignore` (adiciona `raw-assets`)
-- Modify: `package.json`/`package-lock.json` (nova devDependency)
-- Create: `public/models/goalkeeper-dive.glb` (gerado, otimizado)
+- Move: `goleiro_final.glb` (raiz do projeto, já tracked no git — precisa
+  sair do tracking) → `raw-assets/goleiro-final.glb`
+- Delete: `raw-assets/goalkeeper-diving-save.glb` (arquivo bruto da execução
+  anterior, substituído — pode remover do disco)
+- Create/Overwrite: `public/models/goalkeeper-dive.glb` (gerado, otimizado —
+  mesmo nome de arquivo/URL da execução anterior, conteúdo novo)
 
 **Interfaces:**
-- Produces: arquivo estático servido pela URL relativa `./models/goalkeeper-dive.glb` (Nuxt serve `public/` como raiz do site) — consumido pela Task 13 (carregador do modelo).
+- Produces: arquivo estático servido pela URL relativa `./models/goalkeeper-dive.glb` (Nuxt serve `public/` como raiz do site) — consumido pela Task 13 (carregador do modelo). Agora com 4 clipes nomeados em vez de 1.
 
-- [ ] **Step 1: Mover o arquivo bruto para fora do controle de versão**
-
-Run: `mkdir -p raw-assets && mv "Goalkeeper Diving Save (1).glb" "raw-assets/goalkeeper-diving-save.glb"`
-
-- [ ] **Step 2: Ignorar a pasta de assets brutos**
-
-Edite `.gitignore`, adicionando a linha (mantendo as demais):
-
-```
-raw-assets
-```
-
-- [ ] **Step 3: Instalar a ferramenta de otimização**
-
-Run: `npm install -D @gltf-transform/cli`
-
-- [ ] **Step 4: Otimizar o modelo**
+- [ ] **Step 1: Remover o arquivo antigo do tracking do git e mover o novo bruto para fora do controle de versão**
 
 Run:
 
 ```bash
-mkdir -p public/models
-npx gltf-transform optimize raw-assets/goalkeeper-diving-save.glb public/models/goalkeeper-dive.glb --compress meshopt --texture-compress webp --texture-size 512x512
+git rm --cached "goleiro_final.glb"
+mkdir -p raw-assets
+mv "goleiro_final.glb" "raw-assets/goleiro-final.glb"
+rm -f "raw-assets/goalkeeper-diving-save.glb"
 ```
 
-- [ ] **Step 5: Conferir o tamanho final**
+(`raw-assets` já está no `.gitignore` desde a execução anterior desta task —
+não precisa mexer no `.gitignore` de novo.)
 
-Run: `ls -la public/models/goalkeeper-dive.glb`
+- [ ] **Step 2: Otimizar o modelo**
 
-Expected: abaixo de ~1MB. Se ainda estiver acima, repita o Step 4 trocando
-`--texture-size 512x512` por `--texture-size 256x256` até ficar dentro da
-meta. Registre no relatório o tamanho final alcançado.
-
-- [ ] **Step 6: Commit (só o arquivo otimizado, nunca o bruto)**
+`@gltf-transform/cli` já está instalado (execução anterior). Run:
 
 ```bash
-git add .gitignore package.json package-lock.json public/models/goalkeeper-dive.glb
-git commit --no-gpg-sign -m "feat: adiciona modelo 3D real do goleiro mergulhando (otimizado)"
+npx gltf-transform optimize raw-assets/goleiro-final.glb public/models/goalkeeper-dive.glb --compress meshopt --texture-compress webp --texture-size 512
 ```
 
-Confirme com `git status` que `raw-assets/` não aparece como staged nem
-tracked antes de commitar.
+(Nota: a flag é `--texture-size 512`, número único — não `512x512`. A
+versão instalada da CLI, v4.4.1, não aceita o formato `WxH`.)
+
+- [ ] **Step 3: Conferir o tamanho final e as animações preservadas**
+
+Run: `ls -la public/models/goalkeeper-dive.glb && npx gltf-transform inspect public/models/goalkeeper-dive.glb`
+
+Expected: tamanho abaixo de ~1.5MB (pode ficar um pouco acima da meta
+anterior de 1MB já que agora carrega 4 clipes de animação em vez de 1 — isso
+é aceitável). Confirme que as 4 animações (`DiveLeft`, `DiveRight`,
+`CatchCenter`, `Armature|mixamo.com|Base Layer`) continuam presentes na
+inspeção. Se o tamanho ainda estiver muito acima da meta, repita o Step 2
+trocando `--texture-size 512` por `--texture-size 256`.
+
+- [ ] **Step 4: Commit (só o arquivo otimizado, nunca o bruto)**
+
+```bash
+git add public/models/goalkeeper-dive.glb
+git commit --no-gpg-sign -m "feat: recomprime o modelo do goleiro com clipes DiveLeft/DiveRight/CatchCenter"
+```
+
+Confirme com `git status` que `raw-assets/` e `goleiro_final.glb` (raiz) não
+aparecem como staged nem tracked antes de commitar.
 
 ---
 
 ### Task 13: Carregador do modelo real do goleiro (mergulho)
 
+O `goalkeeper-dive.glb` (Task 12, gerado a partir de `goleiro_final.glb`) tem
+**4 clipes de animação nomeados**: `DiveLeft`, `DiveRight`, `CatchCenter` e
+`Armature|mixamo.com|Base Layer` (genérico, não usado aqui). Diferente da
+primeira versão do asset (1 clipe só), não precisa de espelhamento por
+código — cada direção de mergulho tem sua própria animação gravada.
+
 **Files:**
 - Create: `app/game/engine3d/keeperDiveModel.ts`
 
 **Interfaces:**
-- Consumes: `AnimationMixer`, `LoopOnce`, `Group` de `three`; `GLTFLoader`, `GLTF` de `three/examples/jsm/loaders/GLTFLoader.js`; `MeshoptDecoder` de `three/examples/jsm/libs/meshopt_decoder.module.js`; o arquivo `public/models/goalkeeper-dive.glb` da Task 12.
-- Produces: `KeeperDiveModel` (interface), `KEEPER_DIVE_NATURAL_SIDE` (constante ajustável), `loadKeeperDiveModel(): Promise<KeeperDiveModel | null>` — usado pela Task 14 (orquestrador).
+- Consumes: `AnimationMixer`, `LoopOnce`, `Group`, `AnimationAction` de `three`; `GLTFLoader`, `GLTF` de `three/examples/jsm/loaders/GLTFLoader.js`; `MeshoptDecoder` de `three/examples/jsm/libs/meshopt_decoder.module.js`; o arquivo `public/models/goalkeeper-dive.glb` da Task 12; `CharacterPhase` de `./proceduralCharacter` (reaproveita o mesmo union de fases do goleiro procedural).
+- Produces: `KeeperDiveModel` (interface), `loadKeeperDiveModel(): Promise<KeeperDiveModel | null>` — usado pela Task 14 (orquestrador).
 
 - [ ] **Step 1: Implementar**
 
 Crie `app/game/engine3d/keeperDiveModel.ts`:
 
 ```ts
-import { AnimationMixer, LoopOnce, type Group } from 'three'
+import { AnimationMixer, LoopOnce, type AnimationAction, type Group } from 'three'
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
+import type { CharacterPhase } from './proceduralCharacter'
 
 export interface KeeperDiveModel {
   object3D: Group
   /**
-   * Toca a animacao do zero, ajustando a velocidade para caber em
-   * `targetDurationSeconds` (o clipe original dura mais do que a janela de
-   * tempo do lance). `mirror` espelha o modelo no eixo X para cobrir o lado
-   * oposto ao gravado originalmente.
+   * Toca o clipe correspondente a fase (diveLeft/diveRight/diveCenter) do
+   * zero, ajustando a velocidade para caber em `targetDurationSeconds` (os
+   * clipes originais duram mais do que a janela de tempo do lance).
+   * Fases sem clipe correspondente (idle, runup, kick) sao ignoradas — nao
+   * deveriam ser chamadas aqui, o goleiro procedural cobre essas fases.
    */
-  play(mirror: boolean, targetDurationSeconds: number): void
+  play(phase: CharacterPhase, targetDurationSeconds: number): void
   update(deltaSeconds: number): void
 }
 
 const DIVE_MODEL_URL = './models/goalkeeper-dive.glb'
 
-/**
- * Lado para o qual a animacao original mergulha. Ajustar aqui (sem tocar em
- * outro arquivo) se a verificacao manual (Task 15) mostrar que o mergulho
- * "esquerda" do jogo esta saindo espelhado para o lado errado.
- */
-export const KEEPER_DIVE_NATURAL_SIDE: 'left' | 'right' = 'right'
+const CLIP_NAME_BY_PHASE: Partial<Record<CharacterPhase, string>> = {
+  diveLeft: 'DiveLeft',
+  diveRight: 'DiveRight',
+  diveCenter: 'CatchCenter'
+}
 
 /**
  * Carrega o modelo real do goleiro mergulhando (asset fornecido pelo
- * usuario, comprimido na Task 12). Usado apenas durante as fases de voo e
- * pos-impacto do chute — o goleiro procedural (Tasks 6/7) continua sendo
- * usado em todas as outras fases (idle etc.); o batedor nao e afetado.
- * Retorna `null` se o arquivo nao carregar (caminho errado, arquivo
- * ausente) — quem chama deve manter o goleiro procedural nesse caso.
+ * usuario, comprimido na Task 12) com seus 3 clipes de mergulho nomeados.
+ * Usado apenas durante as fases de voo e pos-impacto do chute — o goleiro
+ * procedural (Tasks 6/7) continua sendo usado em todas as outras fases
+ * (idle etc.); o batedor nao e afetado. Retorna `null` se o arquivo nao
+ * carregar (caminho errado, arquivo ausente) — quem chama deve manter o
+ * goleiro procedural nesse caso.
  */
 export async function loadKeeperDiveModel(): Promise<KeeperDiveModel | null> {
   const loader = new GLTFLoader()
@@ -1344,20 +1364,27 @@ export async function loadKeeperDiveModel(): Promise<KeeperDiveModel | null> {
   })
   if (!gltf) return null
 
-  const clip = gltf.animations[0]
-  if (!clip) return null
-
   const mixer = new AnimationMixer(gltf.scene)
-  const action = mixer.clipAction(clip)
-  action.clampWhenFinished = true
-  action.setLoop(LoopOnce, 1)
+  const actionsByClipName = new Map<string, AnimationAction>()
+  for (const clip of gltf.animations) {
+    const action = mixer.clipAction(clip)
+    action.clampWhenFinished = true
+    action.setLoop(LoopOnce, 1)
+    actionsByClipName.set(clip.name, action)
+  }
+
+  let currentAction: AnimationAction | null = null
 
   return {
     object3D: gltf.scene,
-    play(mirror, targetDurationSeconds) {
-      gltf.scene.scale.x = mirror ? -1 : 1
-      action.timeScale = clip.duration / targetDurationSeconds
+    play(phase, targetDurationSeconds) {
+      const clipName = CLIP_NAME_BY_PHASE[phase]
+      const action = clipName ? actionsByClipName.get(clipName) : undefined
+      if (!action) return
+      currentAction?.stop()
+      action.timeScale = action.getClip().duration / targetDurationSeconds
       action.reset().play()
+      currentAction = action
     },
     update(deltaSeconds) {
       mixer.update(deltaSeconds)
@@ -1370,7 +1397,7 @@ export async function loadKeeperDiveModel(): Promise<KeeperDiveModel | null> {
 
 ```bash
 git add app/game/engine3d/keeperDiveModel.ts
-git commit --no-gpg-sign -m "feat: adiciona carregador do modelo real do goleiro mergulhando"
+git commit --no-gpg-sign -m "feat: adiciona carregador do modelo real do goleiro com clipes por direcao"
 ```
 
 ---
@@ -1409,7 +1436,7 @@ import { buildNetMesh, type NetMesh } from './netMesh'
 import type { Ripple } from './netRipple'
 import { screenToAim } from './aimInput'
 import { clampAim, computeWorldLayout, type WorldLayout } from './worldGeometry'
-import { KEEPER_DIVE_NATURAL_SIDE, loadKeeperDiveModel, type KeeperDiveModel } from './keeperDiveModel'
+import { loadKeeperDiveModel, type KeeperDiveModel } from './keeperDiveModel'
 
 const TIMINGS = { runup: 0.72, strike: 0.16, flight: 0.5, aftermath: 1.35 }
 
@@ -1620,9 +1647,7 @@ export class PenaltyEngine3D {
           this.scene.remove(this.keeper.object3D)
           this.keeperDiveModel.object3D.position.copy(this.keeper.object3D.position)
           this.scene.add(this.keeperDiveModel.object3D)
-          // Fase que precisa de espelhamento: a oposta ao lado natural do clipe gravado.
-          const mirrorPhase = KEEPER_DIVE_NATURAL_SIDE === 'left' ? 'diveRight' : 'diveLeft'
-          this.keeperDiveModel.play(divePhase === mirrorPhase, TIMINGS.flight + TIMINGS.aftermath)
+          this.keeperDiveModel.play(divePhase, TIMINGS.flight + TIMINGS.aftermath)
         }
         if (this.diveModelActive) {
           this.keeperDiveModel!.update(delta)
@@ -1749,7 +1774,7 @@ Abra o jogo no navegador (preview) e confirme, em ordem:
 6. Redimensionar a janela (ou girar o dispositivo simulando retrato/paisagem) não quebra a câmera nem corta a cena.
 7. Sem quedas de frame perceptíveis (checar o painel de performance do navegador) em condições comparáveis a um Android de entrada (throttling de CPU 4x no Chrome DevTools).
 8. **Modelo real do goleiro**: no momento do mergulho (fases `flight`/`aftermath`), o modelo real (Task 13) aparece no lugar do procedural, sem popping visível, com escala/orientação corretas (tamanho humano, em pé sobre o gramado, não flutuando nem afundado). Se a escala/orientação estiver errada, ajustar em `keeperDiveModel.ts` (escala uniforme ou offset de posição) e testar de novo.
-9. **Lado do mergulho**: chute mirado à esquerda faz o modelo real mergulhar para a esquerda (e à direita, para a direita) — se estiver invertido, trocar `KEEPER_DIVE_NATURAL_SIDE` em `keeperDiveModel.ts` (Task 13) e testar de novo.
+9. **Lado do mergulho**: chute mirado à esquerda faz o modelo real tocar o clipe `DiveLeft` (e à direita, `DiveRight`) — cada direção já tem sua própria animação gravada, não deveria precisar de ajuste. Se ainda assim sair trocado, confirmar em `keeperDiveModel.ts` (Task 13) se `CLIP_NAME_BY_PHASE` está mapeando `diveLeft`/`diveRight` para os nomes de clipe certos.
 10. Fora do mergulho (parado, corrida do batedor), o goleiro procedural continua aparecendo normalmente — o modelo real não deve "vazar" para essas fases.
 
 - [ ] **Step 5: Commit**
@@ -1794,4 +1819,4 @@ git commit --no-gpg-sign -m "chore: remove o motor grafico 2D substituido pelo P
 - O `.glb` bruto do goleiro (10.6MB) **nunca deve ser commitado** — só a versão otimizada (`public/models/goalkeeper-dive.glb`, meta ~500KB-1MB) gerada pela Task 12. Se o usuário fornecer mais assets no futuro (batedor correndo/chutando, mais variações do goleiro), o mesmo padrão se aplica: pasta `raw-assets/` (gitignorada) para o bruto, `gltf-transform optimize` para gerar a versão final em `public/models/`.
 - Todos os commits usam `git commit --no-gpg-sign` (ver Global Constraints) — não remover a flag nem tentar reabilitar assinatura sem checar com o usuário primeiro.
 - A Task 14 é a maior e mais arriscada — se o Code Reviewer (ou o próprio executor) achar que ficou grande demais para revisar de uma vez, é aceitável quebrá-la em duas entregas (ex: estado + input primeiro, integração de cena visual/modelo real depois), desde que o teste manual da Task 15 só rode no final.
-- O lado do mergulho (`KEEPER_DIVE_NATURAL_SIDE` em `keeperDiveModel.ts`, Task 13) é um palpite até a verificação visual da Task 15 confirmar — não é um bug se precisar ser ajustado nessa etapa.
+- O asset final (`goleiro_final.glb`) já traz clipes nomeados por direção (`DiveLeft`/`DiveRight`/`CatchCenter`), então não há mais espelhamento por código — `keeperDiveModel.ts` só mapeia fase → nome do clipe (`CLIP_NAME_BY_PHASE`, Task 13).
