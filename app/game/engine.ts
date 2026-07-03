@@ -1,0 +1,1428 @@
+/**
+ * Motor do jogo de penalti em Canvas 2D.
+ *
+ * Cena: visao de tras do batedor, olhando para o gol. Camadas:
+ *  - fundo estatico pre-renderizado (ceu, arquibancada, refletores, gramado, linhas)
+ *  - torcida animada (dois quadros pre-renderizados em crossfade + pulo no gol)
+ *  - gol com rede fisica (ondulacao radial quando a bola toca a rede)
+ *  - goleiro (idle animado + mergulho com rotacao)
+ *  - batedor (corrida + chute com esqueleto procedural)
+ *  - bola (voo com perspectiva, sombra, giro)
+ *  - particulas (confete no gol), vinheta e chacoalhar de camera
+ */
+
+export type ShotOutcome = 'goal' | 'save' | 'out'
+
+export type EngineState =
+  | 'ready'
+  | 'aiming'
+  | 'runup'
+  | 'strike'
+  | 'flight'
+  | 'aftermath'
+  | 'done'
+
+export interface EngineCallbacks {
+  onResult(outcome: ShotOutcome): void
+  onStateChange?(state: EngineState): void
+  onKick?(): void
+  onImpact?(outcome: ShotOutcome): void
+}
+
+interface Vec {
+  x: number
+  y: number
+}
+
+interface Ripple {
+  x: number
+  y: number
+  start: number
+}
+
+interface Confetti {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  rot: number
+  vrot: number
+  w: number
+  h: number
+  color: string
+  born: number
+  life: number
+}
+
+interface Layout {
+  W: number
+  H: number
+  horizonY: number
+  boardTop: number
+  boardBottom: number
+  goalCx: number
+  goalLineY: number
+  goalW: number
+  goalH: number
+  postW: number
+  ballR: number
+  spot: Vec
+  keeperH: number
+  kickerH: number
+}
+
+const TAU = Math.PI * 2
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t
+const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
+const easeOutQuad = (t: number) => 1 - (1 - t) * (1 - t)
+const easeInQuad = (t: number) => t * t
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3)
+const easeOutBack = (t: number) => {
+  const c1 = 1.70158
+  const c3 = c1 + 1
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
+}
+
+const CROWD_COLORS = [
+  '#d8433b', '#e0e4ea', '#2e5fa3', '#e8b13f', '#43955f',
+  '#8a4fa0', '#d97941', '#3fa3a0', '#c4cad4', '#a33b52',
+  '#5577c9', '#ddd08a', '#7c9a5a', '#b8b2c9', '#e0e4ea'
+]
+
+const CONFETTI_COLORS = ['#ffd23f', '#3fa9f5', '#ff5d5d', '#5dff8f', '#ff8ff3', '#fff7d6']
+
+const SKIN_TONES = ['#c98e63', '#8a5a3b', '#e2b48c', '#6e4428']
+
+interface Timings {
+  runup: number
+  strike: number
+  flight: number
+  aftermath: number
+}
+
+const TIMINGS: Timings = {
+  runup: 0.72,
+  strike: 0.16,
+  flight: 0.5,
+  aftermath: 1.35
+}
+
+export class PenaltyEngine {
+  private canvas: HTMLCanvasElement
+  private ctx: CanvasRenderingContext2D
+  private cb: EngineCallbacks
+  private dpr = 1
+  private raf = 0
+  private destroyed = false
+
+  private layout!: Layout
+  private staticLayer: HTMLCanvasElement | null = null
+  private crowdA: HTMLCanvasElement | null = null
+  private crowdB: HTMLCanvasElement | null = null
+  private vignette: HTMLCanvasElement | null = null
+
+  state: EngineState = 'ready'
+  private stateStart = 0
+  private now = 0
+
+  private aim: Vec = { x: 0, y: 0 }
+  private hasAim = false
+  private pointerActive = false
+
+  private shotTarget: Vec = { x: 0, y: 0 }
+  private outcome: ShotOutcome = 'goal'
+  private keeperDive: { dir: number; target: Vec; active: boolean } = {
+    dir: 0,
+    target: { x: 0, y: 0 },
+    active: false
+  }
+
+  private ballPos: Vec = { x: 0, y: 0 }
+  private ballScale = 1
+  private ballSpin = 0
+  private impactPoint: Vec = { x: 0, y: 0 }
+  private deflectTarget: Vec = { x: 0, y: 0 }
+
+  private ripples: Ripple[] = []
+  private confetti: Confetti[] = []
+  private ballTrail: { x: number; y: number; r: number }[] = []
+  private crowdExcitement = 0
+  private shake = 0
+  private shakeStart = 0
+
+  private resizeObserver: ResizeObserver | null = null
+  private resultSent = false
+
+  constructor(canvas: HTMLCanvasElement, callbacks: EngineCallbacks) {
+    this.canvas = canvas
+    const ctx = canvas.getContext('2d', { alpha: false })
+    if (!ctx) throw new Error('Canvas 2D indisponivel')
+    this.ctx = ctx
+    this.cb = callbacks
+
+    this.handleResize()
+    this.resizeObserver = new ResizeObserver(() => this.handleResize())
+    this.resizeObserver.observe(canvas.parentElement ?? canvas)
+
+    canvas.addEventListener('pointerdown', this.onPointerDown)
+    canvas.addEventListener('pointermove', this.onPointerMove)
+    window.addEventListener('pointerup', this.onPointerUp)
+
+    this.now = performance.now() / 1000
+    this.stateStart = this.now
+    this.raf = requestAnimationFrame(this.frame)
+  }
+
+  destroy() {
+    this.destroyed = true
+    cancelAnimationFrame(this.raf)
+    this.resizeObserver?.disconnect()
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown)
+    this.canvas.removeEventListener('pointermove', this.onPointerMove)
+    window.removeEventListener('pointerup', this.onPointerUp)
+  }
+
+  reset() {
+    this.setState('ready')
+    this.hasAim = false
+    this.pointerActive = false
+    this.resultSent = false
+    this.keeperDive.active = false
+    this.ripples = []
+    this.confetti = []
+    this.ballTrail = []
+    this.crowdExcitement = 0
+    this.ballPos = { ...this.layout.spot }
+    this.ballScale = 1
+    this.ballSpin = 0
+  }
+
+  // ------------------------------------------------------------------
+  // Layout e camadas estaticas
+  // ------------------------------------------------------------------
+
+  private handleResize() {
+    const parent = this.canvas.parentElement
+    const w = parent?.clientWidth ?? window.innerWidth
+    const h = parent?.clientHeight ?? window.innerHeight
+    this.dpr = clamp(window.devicePixelRatio || 1, 1, 2)
+    this.canvas.width = Math.round(w * this.dpr)
+    this.canvas.height = Math.round(h * this.dpr)
+    this.canvas.style.width = `${w}px`
+    this.canvas.style.height = `${h}px`
+
+    const W = w
+    const H = h
+    const horizonY = H * 0.33
+    const goalW = Math.min(W * 0.8, H * 0.85)
+    const goalH = goalW * 0.34
+    const goalLineY = H * 0.47
+    const layout: Layout = {
+      W,
+      H,
+      horizonY,
+      boardTop: horizonY - H * 0.005,
+      boardBottom: horizonY + H * 0.045,
+      goalCx: W / 2,
+      goalLineY,
+      goalW,
+      goalH,
+      postW: Math.max(3, goalW * 0.016),
+      ballR: clamp(goalW * 0.05, 9, 22),
+      spot: { x: W / 2, y: H * 0.795 },
+      keeperH: goalH * 0.64,
+      kickerH: H * 0.21
+    }
+    this.layout = layout
+    this.ballPos = { ...layout.spot }
+
+    this.renderStaticLayer()
+    this.renderCrowdLayers()
+    this.renderVignette()
+  }
+
+  private makeLayer(): [HTMLCanvasElement, CanvasRenderingContext2D] {
+    const c = document.createElement('canvas')
+    c.width = this.canvas.width
+    c.height = this.canvas.height
+    const ctx = c.getContext('2d')!
+    ctx.scale(this.dpr, this.dpr)
+    return [c, ctx]
+  }
+
+  private renderStaticLayer() {
+    const [layer, ctx] = this.makeLayer()
+    const { W, H, horizonY, boardTop, boardBottom, goalCx, goalLineY, goalW } = this.layout
+
+    // Ceu noturno de estadio
+    const sky = ctx.createLinearGradient(0, 0, 0, horizonY)
+    sky.addColorStop(0, '#0a1633')
+    sky.addColorStop(0.7, '#14264d')
+    sky.addColorStop(1, '#1d3560')
+    ctx.fillStyle = sky
+    ctx.fillRect(0, 0, W, horizonY + 2)
+
+    // Cobertura do estadio
+    ctx.fillStyle = '#0b1224'
+    ctx.beginPath()
+    ctx.moveTo(-W * 0.05, H * 0.1)
+    ctx.quadraticCurveTo(W * 0.5, H * 0.015, W * 1.05, H * 0.1)
+    ctx.lineTo(W * 1.05, 0)
+    ctx.lineTo(-W * 0.05, 0)
+    ctx.closePath()
+    ctx.fill()
+    ctx.strokeStyle = '#233457'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(-W * 0.05, H * 0.1)
+    ctx.quadraticCurveTo(W * 0.5, H * 0.015, W * 1.05, H * 0.1)
+    ctx.stroke()
+
+    // Refletores
+    const lightY = H * 0.055
+    for (const fx of [W * 0.16, W * 0.38, W * 0.62, W * 0.84]) {
+      const glow = ctx.createRadialGradient(fx, lightY, 0, fx, lightY, W * 0.09)
+      glow.addColorStop(0, 'rgba(255,250,220,0.95)')
+      glow.addColorStop(0.25, 'rgba(255,244,190,0.35)')
+      glow.addColorStop(1, 'rgba(255,244,190,0)')
+      ctx.fillStyle = glow
+      ctx.fillRect(fx - W * 0.09, lightY - W * 0.09, W * 0.18, W * 0.18)
+      ctx.fillStyle = '#e8ecf5'
+      ctx.fillRect(fx - W * 0.022, lightY - H * 0.008, W * 0.044, H * 0.016)
+    }
+
+    // Estrutura da arquibancada (a torcida vai por cima, animada)
+    const standTop = H * 0.09
+    const stands = ctx.createLinearGradient(0, standTop, 0, horizonY)
+    stands.addColorStop(0, '#1a2338')
+    stands.addColorStop(1, '#2c3a58')
+    ctx.fillStyle = stands
+    ctx.fillRect(0, standTop, W, horizonY - standTop)
+
+    // Divisorias dos aneis da arquibancada
+    ctx.strokeStyle = 'rgba(10,14,26,0.8)'
+    ctx.lineWidth = Math.max(1.5, H * 0.004)
+    for (const ty of [0.45, 0.72]) {
+      const y = lerp(standTop, horizonY, ty)
+      ctx.beginPath()
+      ctx.moveTo(0, y)
+      ctx.lineTo(W, y)
+      ctx.stroke()
+    }
+
+    // Placas de publicidade estilo painel de LED atras do gol
+    const boardH = boardBottom - boardTop
+    ctx.fillStyle = '#070d18'
+    ctx.fillRect(0, boardTop, W, boardH)
+    ctx.fillStyle = 'rgba(120,180,255,0.25)'
+    ctx.fillRect(0, boardTop, W, 1.5)
+    const ledColors = ['#41d6ff', '#ffd23f', '#41d6ff', '#8dff5a', '#ffd23f', '#41d6ff']
+    const bw = W / ledColors.length
+    ledColors.forEach((c, i) => {
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(i * bw + 3, boardTop, bw - 6, boardH)
+      ctx.clip()
+      ctx.shadowColor = c
+      ctx.shadowBlur = 10
+      ctx.fillStyle = c
+      ctx.globalAlpha = 0.9
+      ctx.font = `800 ${Math.min(boardH * 0.44, bw * 0.14)}px 'Segoe UI', sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('PREMIADO', i * bw + bw / 2, boardTop + boardH * 0.54)
+      ctx.restore()
+    })
+
+    // Gramado com perspectiva
+    const grass = ctx.createLinearGradient(0, boardBottom, 0, H)
+    grass.addColorStop(0, '#2c7a3f')
+    grass.addColorStop(0.45, '#2f8a45')
+    grass.addColorStop(1, '#25913f')
+    ctx.fillStyle = grass
+    ctx.fillRect(0, boardBottom, W, H - boardBottom)
+
+    // Faixas do corte de grama (largura cresce com a proximidade)
+    ctx.fillStyle = 'rgba(255,255,255,0.05)'
+    let y = boardBottom
+    let bandH = H * 0.018
+    let i = 0
+    while (y < H) {
+      if (i % 2 === 0) ctx.fillRect(0, y, W, bandH)
+      y += bandH
+      bandH *= 1.32
+      i++
+    }
+
+    // Textura do gramado: pontinhos irregulares
+    let grng = 98765
+    const grand = () => {
+      grng = (grng * 1103515245 + 12345) & 0x7fffffff
+      return grng / 0x7fffffff
+    }
+    for (let k = 0; k < 500; k++) {
+      const gy = lerp(boardBottom + 4, H, easeInQuad(grand()))
+      const gx = grand() * W
+      const gsize = lerp(0.6, 2.2, (gy - boardBottom) / (H - boardBottom))
+      ctx.fillStyle = grand() > 0.5 ? 'rgba(10,60,25,0.16)' : 'rgba(210,255,210,0.08)'
+      ctx.fillRect(gx, gy, gsize, gsize * 0.6)
+    }
+
+    // Area gasta ao redor da marca do penalti
+    const worn = ctx.createRadialGradient(
+      this.layout.spot.x, this.layout.spot.y, 0,
+      this.layout.spot.x, this.layout.spot.y, this.layout.ballR * 5
+    )
+    worn.addColorStop(0, 'rgba(122,90,40,0.28)')
+    worn.addColorStop(0.6, 'rgba(122,90,40,0.1)')
+    worn.addColorStop(1, 'rgba(122,90,40,0)')
+    ctx.fillStyle = worn
+    ctx.beginPath()
+    ctx.ellipse(this.layout.spot.x, this.layout.spot.y, this.layout.ballR * 5, this.layout.ballR * 2.2, 0, 0, TAU)
+    ctx.fill()
+
+    // Luz do refletor sobre o campo
+    const fieldGlow = ctx.createRadialGradient(
+      W / 2, goalLineY, goalW * 0.1,
+      W / 2, goalLineY + H * 0.1, Math.max(W, H) * 0.75
+    )
+    fieldGlow.addColorStop(0, 'rgba(255,255,220,0.16)')
+    fieldGlow.addColorStop(1, 'rgba(255,255,220,0)')
+    ctx.fillStyle = fieldGlow
+    ctx.fillRect(0, boardBottom, W, H - boardBottom)
+
+    // Linhas da grande area em perspectiva
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+    ctx.lineWidth = Math.max(2, H * 0.004)
+    ctx.lineJoin = 'round'
+
+    const vanish: Vec = { x: W / 2, y: horizonY - H * 0.3 }
+    const persp = (gx: number, gy: number): Vec => {
+      // gx: -1..1 (largura do campo), gy: 0 (linha do gol)..1 (perto da camera)
+      const yy = lerp(goalLineY, H * 1.06, easeInQuad(gy))
+      const spread = lerp(goalW * 1.55, W * 2.4, easeInQuad(gy))
+      return { x: goalCx + (gx * spread) / 2, y: yy }
+    }
+    void vanish
+
+    // Linha do gol
+    ctx.beginPath()
+    ctx.moveTo(0, goalLineY)
+    ctx.lineTo(W, goalLineY)
+    ctx.stroke()
+
+    // Grande area
+    const bigArea = [persp(-0.98, 0), persp(-0.98, 0.62), persp(0.98, 0.62), persp(0.98, 0)]
+    ctx.beginPath()
+    ctx.moveTo(bigArea[0]!.x, bigArea[0]!.y)
+    for (const p of bigArea.slice(1)) ctx.lineTo(p.x, p.y)
+    ctx.stroke()
+
+    // Pequena area
+    const smallArea = [persp(-0.44, 0), persp(-0.44, 0.24), persp(0.44, 0.24), persp(0.44, 0)]
+    ctx.beginPath()
+    ctx.moveTo(smallArea[0]!.x, smallArea[0]!.y)
+    for (const p of smallArea.slice(1)) ctx.lineTo(p.x, p.y)
+    ctx.stroke()
+
+    // Meia-lua da area
+    ctx.beginPath()
+    ctx.ellipse(W / 2, bigArea[1]!.y, goalW * 0.42, H * 0.05, 0, 0.15, Math.PI - 0.15)
+    ctx.stroke()
+
+    // Marca do penalti
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    ctx.beginPath()
+    ctx.ellipse(this.layout.spot.x, this.layout.spot.y, this.layout.ballR * 0.55, this.layout.ballR * 0.22, 0, 0, TAU)
+    ctx.fill()
+
+    this.staticLayer = layer
+  }
+
+  private renderCrowdLayers() {
+    const { W, H, horizonY } = this.layout
+    const standTop = H * 0.095
+    const rows = 26
+    const seed = 12345
+    let rng = seed
+    const rand = () => {
+      rng = (rng * 1103515245 + 12345) & 0x7fffffff
+      return rng / 0x7fffffff
+    }
+
+    const build = (variant: number) => {
+      const [layer, ctx] = this.makeLayer()
+      let localRng = seed
+      const lrand = () => {
+        localRng = (localRng * 1103515245 + 12345) & 0x7fffffff
+        return localRng / 0x7fffffff
+      }
+      for (let r = 0; r < rows; r++) {
+        const t = r / (rows - 1)
+        const y = lerp(standTop + 4, horizonY - 4, t)
+        const size = lerp(H * 0.006, H * 0.011, t)
+        const step = size * 2.1
+        for (let x = step / 2 + (r % 2) * step * 0.5; x < W; x += step) {
+          // Setores de torcida organizada: blocos amarelos e azuis
+          const section = Math.floor((x / W) * 9)
+          const sectionColor = section % 3 === 0 ? '#e8b13f' : section % 3 === 2 ? '#2e5fa3' : null
+          const cIdx = Math.floor(lrand() * CROWD_COLORS.length)
+          const jitterX = (lrand() - 0.5) * size
+          const jitterY = (lrand() - 0.5) * size * 0.8
+          const bob = variant === 1 && lrand() > 0.5 ? -size * 0.45 : 0
+          ctx.fillStyle = sectionColor && lrand() < 0.55 ? sectionColor : CROWD_COLORS[cIdx]!
+          ctx.beginPath()
+          ctx.arc(x + jitterX, y + jitterY + bob, size * 0.62, 0, TAU)
+          ctx.fill()
+          // cabeca
+          ctx.fillStyle = SKIN_TONES[Math.floor(lrand() * SKIN_TONES.length)]!
+          ctx.beginPath()
+          ctx.arc(x + jitterX, y + jitterY + bob - size * 0.72, size * 0.4, 0, TAU)
+          ctx.fill()
+        }
+      }
+      // sombra suave sobre a torcida para dar profundidade
+      const shade = ctx.createLinearGradient(0, standTop, 0, horizonY)
+      shade.addColorStop(0, 'rgba(8,12,24,0.55)')
+      shade.addColorStop(1, 'rgba(8,12,24,0.05)')
+      ctx.fillStyle = shade
+      ctx.fillRect(0, standTop - 2, W, horizonY - standTop + 4)
+      return layer
+    }
+
+    void rand
+    this.crowdA = build(0)
+    this.crowdB = build(1)
+  }
+
+  private renderVignette() {
+    const [layer, ctx] = this.makeLayer()
+    const { W, H, goalCx, goalLineY } = this.layout
+
+    // Feixes volumetricos dos refletores em direcao a area
+    const lightY = H * 0.055
+    ctx.globalCompositeOperation = 'lighter'
+    for (const fx of [W * 0.16, W * 0.38, W * 0.62, W * 0.84]) {
+      const beam = ctx.createLinearGradient(fx, lightY, goalCx, goalLineY + H * 0.15)
+      beam.addColorStop(0, 'rgba(255,248,214,0.10)')
+      beam.addColorStop(0.55, 'rgba(255,248,214,0.035)')
+      beam.addColorStop(1, 'rgba(255,248,214,0)')
+      ctx.fillStyle = beam
+      ctx.beginPath()
+      ctx.moveTo(fx - W * 0.015, lightY)
+      ctx.lineTo(fx + W * 0.015, lightY)
+      ctx.lineTo(goalCx + W * 0.34, goalLineY + H * 0.22)
+      ctx.lineTo(goalCx - W * 0.34, goalLineY + H * 0.22)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.globalCompositeOperation = 'source-over'
+
+    const g = ctx.createRadialGradient(W / 2, H * 0.52, Math.min(W, H) * 0.45, W / 2, H * 0.52, Math.max(W, H) * 0.82)
+    g.addColorStop(0, 'rgba(0,0,0,0)')
+    g.addColorStop(1, 'rgba(2,8,4,0.5)')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, W, H)
+    this.vignette = layer
+  }
+
+  // ------------------------------------------------------------------
+  // Entrada do jogador
+  // ------------------------------------------------------------------
+
+  private toLocal(e: PointerEvent): Vec {
+    const rect = this.canvas.getBoundingClientRect()
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+  }
+
+  private aimBounds() {
+    const { goalCx, goalLineY, goalW, goalH } = this.layout
+    return {
+      minX: goalCx - goalW * 0.66,
+      maxX: goalCx + goalW * 0.66,
+      minY: goalLineY - goalH * 1.32,
+      maxY: goalLineY - goalH * 0.04
+    }
+  }
+
+  private onPointerDown = (e: PointerEvent) => {
+    if (this.state !== 'ready' && this.state !== 'aiming') return
+    this.pointerActive = true
+    const b = this.aimBounds()
+    const p = this.toLocal(e)
+    this.aim = { x: clamp(p.x, b.minX, b.maxX), y: clamp(p.y, b.minY, b.maxY) }
+    this.hasAim = true
+    this.setState('aiming')
+  }
+
+  private onPointerMove = (e: PointerEvent) => {
+    if (!this.pointerActive || this.state !== 'aiming') return
+    const b = this.aimBounds()
+    const p = this.toLocal(e)
+    this.aim = { x: clamp(p.x, b.minX, b.maxX), y: clamp(p.y, b.minY, b.maxY) }
+  }
+
+  private onPointerUp = () => {
+    if (!this.pointerActive) return
+    this.pointerActive = false
+    if (this.state === 'aiming' && this.hasAim) this.shoot(this.aim)
+  }
+
+  // ------------------------------------------------------------------
+  // Logica da cobranca
+  // ------------------------------------------------------------------
+
+  private goalInnerRect() {
+    const { goalCx, goalLineY, goalW, goalH, postW } = this.layout
+    return {
+      left: goalCx - goalW / 2 + postW,
+      right: goalCx + goalW / 2 - postW,
+      top: goalLineY - goalH + postW,
+      bottom: goalLineY
+    }
+  }
+
+  private shoot(target: Vec) {
+    const rect = this.goalInnerRect()
+    this.shotTarget = { ...target }
+
+    const inGoal =
+      target.x > rect.left && target.x < rect.right &&
+      target.y > rect.top && target.y < rect.bottom
+
+    // Goleiro escolhe um canto: tende a ir para o lado certo, mas nem sempre
+    const cols = [lerp(rect.left, rect.right, 0.16), (rect.left + rect.right) / 2, lerp(rect.left, rect.right, 0.84)]
+    const rowsY = [lerp(rect.top, rect.bottom, 0.32), lerp(rect.top, rect.bottom, 0.82)]
+    const targetCol = target.x < lerp(rect.left, rect.right, 0.38) ? 0 : target.x > lerp(rect.left, rect.right, 0.62) ? 2 : 1
+    const targetRow = target.y < lerp(rect.top, rect.bottom, 0.5) ? 0 : 1
+
+    let col: number
+    const guessRight = Math.random() < 0.58
+    if (guessRight) col = targetCol
+    else {
+      const others = [0, 1, 2].filter((c) => c !== targetCol)
+      col = others[Math.floor(Math.random() * others.length)]!
+    }
+    const row = Math.random() < (col === targetCol ? 0.62 : 0.5) ? targetRow : 1 - targetRow
+
+    const dive: Vec = { x: cols[col]!, y: rowsY[row]! }
+    this.keeperDive = { dir: Math.sign(dive.x - this.layout.goalCx) || 0, target: dive, active: true }
+
+    if (!inGoal) {
+      this.outcome = 'out'
+    } else {
+      const reach = this.layout.goalH * 0.36
+      const dist = Math.hypot(dive.x - target.x, dive.y - target.y)
+      this.outcome = dist < reach ? 'save' : 'goal'
+      if (this.outcome === 'save') {
+        this.impactPoint = {
+          x: lerp(dive.x, target.x, 0.55),
+          y: lerp(dive.y, target.y, 0.55)
+        }
+        const outX = this.impactPoint.x < this.layout.goalCx
+          ? rect.left - this.layout.goalW * 0.42
+          : rect.right + this.layout.goalW * 0.42
+        this.deflectTarget = { x: outX, y: this.layout.goalLineY + this.layout.H * 0.06 }
+      }
+    }
+
+    if (this.outcome === 'goal') this.impactPoint = { ...target }
+    if (this.outcome === 'out') {
+      // A bola segue alem do gol ate as placas
+      const over = target.y < rect.top
+      this.impactPoint = {
+        x: lerp(this.layout.spot.x, target.x, over ? 1.25 : 1.18),
+        y: over ? this.layout.boardTop + this.layout.H * 0.012 : lerp(this.layout.boardBottom, this.layout.goalLineY, 0.4)
+      }
+    }
+
+    this.hasAim = false
+    this.setState('runup')
+  }
+
+  private setState(s: EngineState) {
+    this.state = s
+    this.stateStart = this.now
+    this.cb.onStateChange?.(s)
+  }
+
+  // ------------------------------------------------------------------
+  // Loop principal
+  // ------------------------------------------------------------------
+
+  private frame = (ms: number) => {
+    if (this.destroyed) return
+    this.now = ms / 1000
+    this.update()
+    this.draw()
+    this.raf = requestAnimationFrame(this.frame)
+  }
+
+  private stateT() {
+    return this.now - this.stateStart
+  }
+
+  private update() {
+    const t = this.stateT()
+    const L = this.layout
+
+    switch (this.state) {
+      case 'runup': {
+        if (t >= TIMINGS.runup) {
+          this.setState('strike')
+        }
+        break
+      }
+      case 'strike': {
+        if (t >= TIMINGS.strike) {
+          this.cb.onKick?.()
+          this.setState('flight')
+        }
+        break
+      }
+      case 'flight': {
+        const ft = clamp(t / TIMINGS.flight, 0, 1)
+        const end = this.outcome === 'save' ? this.impactPoint : this.outcome === 'goal' ? this.impactPoint : this.impactPoint
+        const p = easeOutQuad(ft)
+        this.ballPos = {
+          x: lerp(L.spot.x, end.x, p),
+          y: lerp(L.spot.y, end.y, p) - this.arcHeight() * Math.sin(Math.PI * ft)
+        }
+        this.ballScale = lerp(1, 0.42, p)
+        this.ballSpin += 0.35
+        this.pushTrail()
+        if (ft >= 1) {
+          this.onBallArrive()
+          this.setState('aftermath')
+        }
+        break
+      }
+      case 'aftermath': {
+        this.updateAftermath(t)
+        if (t >= TIMINGS.aftermath) {
+          if (!this.resultSent) {
+            this.resultSent = true
+            this.cb.onResult(this.outcome)
+          }
+          this.setState('done')
+        }
+        break
+      }
+    }
+
+    // O rastro da bola se dissipa quando ela para de voar
+    if (this.ballTrail.length && (this.state === 'done' || (this.state === 'aftermath' && this.outcome !== 'save'))) {
+      this.ballTrail.shift()
+    }
+
+    // Confete
+    if (this.confetti.length) {
+      const dt = 1 / 60
+      this.confetti = this.confetti.filter((c) => this.now - c.born < c.life)
+      for (const c of this.confetti) {
+        c.vy += 260 * dt
+        c.vx *= 0.995
+        c.x += c.vx * dt + Math.sin((this.now - c.born) * 6 + c.rot) * 0.6
+        c.y += c.vy * dt
+        c.rot += c.vrot * dt
+      }
+    }
+
+    if (this.crowdExcitement > 0 && this.state === 'done') {
+      this.crowdExcitement = Math.max(0, this.crowdExcitement - 0.004)
+    }
+  }
+
+  private arcHeight() {
+    const L = this.layout
+    // Chutes altos sobem mais reto; chutes rasteiros fazem arco menor
+    const targetH = clamp((L.goalLineY - this.shotTarget.y) / L.goalH, 0, 1.4)
+    return lerp(L.H * 0.055, L.H * 0.012, clamp(targetH, 0, 1))
+  }
+
+  private onBallArrive() {
+    this.shakeStart = this.now
+    this.cb.onImpact?.(this.outcome)
+    if (this.outcome === 'goal') {
+      this.shake = 6
+      this.ripples.push({ x: this.impactPoint.x, y: this.impactPoint.y, start: this.now })
+      this.crowdExcitement = 1
+      this.spawnConfetti()
+    } else if (this.outcome === 'save') {
+      this.shake = 4
+    } else {
+      this.shake = 3
+    }
+  }
+
+  private updateAftermath(t: number) {
+    const L = this.layout
+    if (this.outcome === 'goal') {
+      // A bola afunda na rede e cai
+      const sink = clamp(t / 0.28, 0, 1)
+      const drop = clamp((t - 0.3) / 0.7, 0, 1)
+      this.ballPos = {
+        x: this.impactPoint.x,
+        y: this.impactPoint.y + easeOutQuad(sink) * L.goalH * 0.05 + easeInQuad(drop) * (L.goalLineY - this.impactPoint.y) * 0.9
+      }
+      this.ballScale = lerp(0.42, 0.4, sink)
+    } else if (this.outcome === 'save') {
+      // Rebote para fora apos a defesa
+      const dt = clamp(t / 0.55, 0, 1)
+      const p = easeOutQuad(dt)
+      this.ballPos = {
+        x: lerp(this.impactPoint.x, this.deflectTarget.x, p),
+        y: lerp(this.impactPoint.y, this.deflectTarget.y, p) - L.H * 0.03 * Math.sin(Math.PI * dt)
+      }
+      this.ballScale = lerp(0.42, 0.5, p)
+      this.ballSpin += 0.3
+      this.pushTrail()
+    } else {
+      // Fora: a bola quica nas placas e rola
+      const dt = clamp(t / 0.8, 0, 1)
+      const bounce = Math.abs(Math.sin(dt * Math.PI * 1.6)) * (1 - dt)
+      this.ballPos = {
+        x: this.impactPoint.x + dt * (this.impactPoint.x > L.goalCx ? 1 : -1) * L.W * 0.04,
+        y: this.impactPoint.y - bounce * L.H * 0.02
+      }
+      this.ballScale = 0.4
+    }
+  }
+
+  private pushTrail() {
+    this.ballTrail.push({ x: this.ballPos.x, y: this.ballPos.y, r: this.layout.ballR * this.ballScale })
+    if (this.ballTrail.length > 8) this.ballTrail.shift()
+  }
+
+  private spawnConfetti() {
+    const { W, H, horizonY } = this.layout
+    for (let i = 0; i < 160; i++) {
+      const x = Math.random() * W
+      const y = lerp(H * 0.1, horizonY, Math.random())
+      this.confetti.push({
+        x,
+        y,
+        vx: (Math.random() - 0.5) * 60,
+        vy: Math.random() * 40 - 60,
+        rot: Math.random() * TAU,
+        vrot: (Math.random() - 0.5) * 10,
+        w: lerp(3, 7, Math.random()),
+        h: lerp(5, 11, Math.random()),
+        color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)]!,
+        born: this.now,
+        life: lerp(1.6, 3, Math.random())
+      })
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Desenho
+  // ------------------------------------------------------------------
+
+  private draw() {
+    const ctx = this.ctx
+    const L = this.layout
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+
+    // Chacoalhar de camera
+    if (this.shake > 0) {
+      const st = this.now - this.shakeStart
+      const decay = Math.max(0, 1 - st / 0.5)
+      if (decay > 0) {
+        ctx.translate(
+          Math.sin(st * 55) * this.shake * decay,
+          Math.cos(st * 47) * this.shake * decay * 0.6
+        )
+      } else {
+        this.shake = 0
+      }
+    }
+
+    // Zoom sutil de camera acompanhando o lance
+    let zoom = 1
+    if (this.state === 'flight') {
+      zoom = 1 + 0.045 * easeInQuad(clamp(this.stateT() / TIMINGS.flight, 0, 1))
+    } else if (this.state === 'aftermath') {
+      zoom = 1 + 0.045 * (1 - clamp(this.stateT() / 0.9, 0, 1))
+    }
+    if (zoom !== 1) {
+      const fx = L.W / 2
+      const fy = L.H * 0.45
+      ctx.translate(fx, fy)
+      ctx.scale(zoom, zoom)
+      ctx.translate(-fx, -fy)
+    }
+
+    if (this.staticLayer) ctx.drawImage(this.staticLayer, 0, 0, L.W, L.H)
+
+    this.drawCrowd(ctx)
+    this.drawNetAndGoal(ctx)
+    this.drawKeeper(ctx)
+    this.drawAimHint(ctx)
+    this.drawBallShadow(ctx)
+    this.drawKicker(ctx)
+    this.drawBallTrail(ctx)
+    this.drawBall(ctx)
+    this.drawConfetti(ctx)
+
+    if (this.vignette) ctx.drawImage(this.vignette, 0, 0, L.W, L.H)
+  }
+
+  private drawCrowd(ctx: CanvasRenderingContext2D) {
+    if (!this.crowdA || !this.crowdB) return
+    const L = this.layout
+    const excited = this.crowdExcitement
+    const speed = excited > 0 ? 9 : 2.2
+    const phase = (Math.sin(this.now * speed) + 1) / 2
+    const jump = excited * Math.abs(Math.sin(this.now * 11)) * L.H * 0.006
+
+    ctx.save()
+    ctx.globalAlpha = 1
+    ctx.drawImage(this.crowdA, 0, jump ? -jump : 0, L.W, L.H)
+    ctx.globalAlpha = clamp(phase, 0, 1) * (excited > 0 ? 1 : 0.55)
+    ctx.drawImage(this.crowdB, 0, -jump * 1.6, L.W, L.H)
+    ctx.restore()
+  }
+
+  private netDisplacement(x: number, y: number): number {
+    let d = 0
+    for (const r of this.ripples) {
+      const age = this.now - r.start
+      if (age > 1.4) continue
+      const dist = Math.hypot(x - r.x, y - r.y)
+      d +=
+        Math.exp(-dist / (this.layout.goalW * 0.16)) *
+        Math.exp(-age * 3.2) *
+        Math.sin(dist / (this.layout.goalW * 0.045) - age * 26) *
+        this.layout.goalH * 0.06
+    }
+    return d
+  }
+
+  private drawNetAndGoal(ctx: CanvasRenderingContext2D) {
+    const L = this.layout
+    const { goalCx, goalLineY, goalW, goalH, postW } = L
+    const left = goalCx - goalW / 2
+    const right = goalCx + goalW / 2
+    const top = goalLineY - goalH
+    this.ripples = this.ripples.filter((r) => this.now - r.start < 1.4)
+
+    const depth = goalW * 0.075
+    const backLeft = left + depth
+    const backRight = right - depth
+    const backTop = top + depth * 0.55
+
+    ctx.save()
+    ctx.strokeStyle = 'rgba(235,240,248,0.5)'
+    ctx.lineWidth = 1
+
+    // Rede de fundo (malha com fisica de ondulacao)
+    const cols = 15
+    const rows = 8
+    for (let c = 0; c <= cols; c++) {
+      ctx.beginPath()
+      for (let r = 0; r <= rows; r++) {
+        const bx = lerp(backLeft, backRight, c / cols)
+        const sag = Math.sin((c / cols) * Math.PI) * goalH * 0.035 * (r / rows)
+        const by = lerp(backTop, goalLineY, r / rows) + sag
+        const disp = this.netDisplacement(bx, by)
+        const px = bx + disp * 0.35
+        const py = by + disp
+        r === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)
+      }
+      ctx.stroke()
+    }
+    for (let r = 0; r <= rows; r++) {
+      ctx.beginPath()
+      for (let c = 0; c <= cols; c++) {
+        const bx = lerp(backLeft, backRight, c / cols)
+        const sag = Math.sin((c / cols) * Math.PI) * goalH * 0.035 * (r / rows)
+        const by = lerp(backTop, goalLineY, r / rows) + sag
+        const disp = this.netDisplacement(bx, by)
+        const px = bx + disp * 0.35
+        const py = by + disp
+        c === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py)
+      }
+      ctx.stroke()
+    }
+
+    // Redes laterais
+    ctx.strokeStyle = 'rgba(235,240,248,0.35)'
+    for (let i = 0; i <= 6; i++) {
+      const t = i / 6
+      ctx.beginPath()
+      ctx.moveTo(left, lerp(top, goalLineY, t))
+      ctx.lineTo(backLeft, lerp(backTop, goalLineY, t))
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(right, lerp(top, goalLineY, t))
+      ctx.lineTo(backRight, lerp(backTop, goalLineY, t))
+      ctx.stroke()
+    }
+    // Rede do teto
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8
+      ctx.beginPath()
+      ctx.moveTo(lerp(left, right, t), top)
+      ctx.lineTo(lerp(backLeft, backRight, t), backTop)
+      ctx.stroke()
+    }
+
+    // Traves com leve volume
+    const postGrad = ctx.createLinearGradient(0, top, 0, goalLineY)
+    postGrad.addColorStop(0, '#ffffff')
+    postGrad.addColorStop(1, '#cfd6e0')
+    ctx.fillStyle = postGrad
+    ctx.fillRect(left - postW / 2, top - postW / 2, postW, goalH + postW)
+    ctx.fillRect(right - postW / 2, top - postW / 2, postW, goalH + postW)
+    ctx.fillRect(left - postW / 2, top - postW / 2, goalW + postW, postW)
+    ctx.fillStyle = 'rgba(30,40,60,0.25)'
+    ctx.fillRect(left + postW / 2 - 1, top - postW / 2, 1.5, goalH + postW)
+    ctx.fillRect(right + postW / 2 - 1.5, top - postW / 2, 1.5, goalH + postW)
+
+    ctx.restore()
+  }
+
+  // Capsula: membro com pontas arredondadas
+  private limb(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, w: number, color: string) {
+    ctx.strokeStyle = color
+    ctx.lineWidth = w
+    ctx.lineCap = 'round'
+    ctx.beginPath()
+    ctx.moveTo(x1, y1)
+    ctx.lineTo(x2, y2)
+    ctx.stroke()
+  }
+
+  private drawKeeper(ctx: CanvasRenderingContext2D) {
+    const L = this.layout
+    const h = L.keeperH
+    const u = h / 7 // unidade corporal
+    const baseX = L.goalCx
+    const baseY = L.goalLineY - 2
+
+    ctx.save()
+
+    const keeperShadow = (cx: number, spread: number) => {
+      ctx.fillStyle = 'rgba(8,30,14,0.3)'
+      ctx.beginPath()
+      ctx.ellipse(cx, L.goalLineY + u * 0.3, u * spread, u * 0.42, 0, 0, TAU)
+      ctx.fill()
+    }
+
+    if (this.keeperDive.active && (this.state === 'flight' || this.state === 'aftermath' || this.state === 'done' || this.state === 'strike' || this.state === 'runup')) {
+      // Mergulho comeca junto com o chute
+      let dt = 0
+      if (this.state === 'flight') dt = clamp(this.stateT() / (TIMINGS.flight * 0.95), 0, 1)
+      else if (this.state === 'aftermath' || this.state === 'done') dt = 1
+
+      if (dt > 0) {
+        const p = easeOutQuad(dt)
+        const tx = this.keeperDive.target.x
+        const ty = this.keeperDive.target.y
+        const cx = lerp(baseX, tx, p)
+        const cy = lerp(baseY - u * 3.6, ty, p) + Math.sin(p * Math.PI) * -u * 0.8
+        const angle = lerp(0, Math.atan2(ty - (baseY - u * 3.6), tx - baseX) * 0.55, p)
+
+        keeperShadow(cx, 2.6 + p * 1.4)
+        ctx.translate(cx, cy)
+        ctx.rotate(angle)
+        this.drawKeeperFigure(ctx, u, 1, p)
+        ctx.restore()
+        return
+      }
+    }
+
+    // Idle: balanco lateral + flexao
+    const sway = Math.sin(this.now * 2.1) * u * 0.5
+    const bounce = Math.abs(Math.sin(this.now * 2.1)) * u * 0.22
+    keeperShadow(baseX + sway, 2.2)
+    ctx.translate(baseX + sway, baseY - u * 3.6 + bounce)
+    this.drawKeeperFigure(ctx, u, 0, 0)
+    ctx.restore()
+  }
+
+  /** Goleiro todo de preto com luvas verdes. mode 0 = idle, 1 = mergulho. */
+  private drawKeeperFigure(ctx: CanvasRenderingContext2D, u: number, mode: number, diveP: number) {
+    const kit = '#15151a'
+    const kitShade = '#26262e'
+    const gloves = '#8dff5a'
+    const skin = '#c98e63'
+
+    if (mode === 0) {
+      const armDrop = Math.sin(this.now * 2.1) * u * 0.12
+      // pernas flexionadas
+      this.limb(ctx, -u * 0.7, u * 1.6, -u * 1.05, u * 3.3, u * 0.62, kit)
+      this.limb(ctx, u * 0.7, u * 1.6, u * 1.05, u * 3.3, u * 0.62, kit)
+      // chuteiras
+      this.limb(ctx, -u * 1.05, u * 3.35, -u * 1.35, u * 3.4, u * 0.4, '#0a0a0d')
+      this.limb(ctx, u * 1.05, u * 3.35, u * 1.35, u * 3.4, u * 0.4, '#0a0a0d')
+      // tronco
+      ctx.fillStyle = kit
+      ctx.beginPath()
+      ctx.moveTo(-u * 1.05, -u * 1.4)
+      ctx.quadraticCurveTo(0, -u * 1.75, u * 1.05, -u * 1.4)
+      ctx.lineTo(u * 0.85, u * 1.7)
+      ctx.quadraticCurveTo(0, u * 2, -u * 0.85, u * 1.7)
+      ctx.closePath()
+      ctx.fill()
+      ctx.fillStyle = kitShade
+      ctx.fillRect(-u * 0.12, -u * 1.5, u * 0.24, u * 3)
+      // bracos prontos
+      this.limb(ctx, -u * 1.0, -u * 1.1, -u * 1.9, u * 0.5 + armDrop, u * 0.5, kit)
+      this.limb(ctx, u * 1.0, -u * 1.1, u * 1.9, u * 0.5 + armDrop, u * 0.5, kit)
+      // luvas
+      ctx.fillStyle = gloves
+      ctx.beginPath()
+      ctx.arc(-u * 1.9, u * 0.5 + armDrop, u * 0.36, 0, TAU)
+      ctx.arc(u * 1.9, u * 0.5 + armDrop, u * 0.36, 0, TAU)
+      ctx.fill()
+      // cabeca
+      ctx.fillStyle = skin
+      ctx.beginPath()
+      ctx.arc(0, -u * 2.2, u * 0.62, 0, TAU)
+      ctx.fill()
+      ctx.fillStyle = '#1c1108'
+      ctx.beginPath()
+      ctx.arc(0, -u * 2.42, u * 0.6, Math.PI, TAU)
+      ctx.fill()
+    } else {
+      const stretch = lerp(0.4, 1, diveP)
+      // corpo esticado na direcao do mergulho
+      ctx.fillStyle = kit
+      ctx.beginPath()
+      ctx.ellipse(0, 0, u * 1.7 * stretch + u * 0.6, u * 1.05, 0, 0, TAU)
+      ctx.fill()
+      // pernas juntas para tras
+      this.limb(ctx, -u * 1.3 * stretch, u * 0.3, -u * 3.1 * stretch, u * 0.9, u * 0.58, kit)
+      this.limb(ctx, -u * 1.3 * stretch, u * 0.1, -u * 3.3 * stretch, u * 0.3, u * 0.58, kitShade)
+      this.limb(ctx, -u * 3.1 * stretch, u * 0.92, -u * 3.5 * stretch, u * 1.0, u * 0.38, '#0a0a0d')
+      this.limb(ctx, -u * 3.3 * stretch, u * 0.32, -u * 3.7 * stretch, u * 0.38, u * 0.38, '#0a0a0d')
+      // bracos esticados na direcao da bola
+      this.limb(ctx, u * 1.1 * stretch, -u * 0.4, u * 2.9 * stretch, -u * 1.15, u * 0.5, kit)
+      this.limb(ctx, u * 1.1 * stretch, 0.1 * u, u * 3.1 * stretch, -u * 0.55, u * 0.5, kitShade)
+      ctx.fillStyle = gloves
+      ctx.beginPath()
+      ctx.arc(u * 2.9 * stretch, -u * 1.15, u * 0.38, 0, TAU)
+      ctx.arc(u * 3.1 * stretch, -u * 0.55, u * 0.38, 0, TAU)
+      ctx.fill()
+      // cabeca
+      ctx.fillStyle = skin
+      ctx.beginPath()
+      ctx.arc(u * 1.35 * stretch, -u * 0.75, u * 0.6, 0, TAU)
+      ctx.fill()
+      ctx.fillStyle = '#1c1108'
+      ctx.beginPath()
+      ctx.arc(u * 1.35 * stretch, -u * 0.95, u * 0.56, Math.PI * 0.9, TAU * 0.98)
+      ctx.fill()
+    }
+  }
+
+  private kickerAnchor(): { pos: Vec; runP: number; kickP: number } {
+    const L = this.layout
+    const start: Vec = { x: L.spot.x - L.W * 0.17, y: L.spot.y + L.H * 0.085 }
+    const plant: Vec = { x: L.spot.x - L.ballR * 2.1, y: L.spot.y + L.ballR * 0.9 }
+
+    if (this.state === 'runup') {
+      const t = easeInQuad(clamp(this.stateT() / TIMINGS.runup, 0, 1))
+      return { pos: { x: lerp(start.x, plant.x, t), y: lerp(start.y, plant.y, t) }, runP: clamp(this.stateT() / TIMINGS.runup, 0, 1), kickP: 0 }
+    }
+    if (this.state === 'strike') {
+      return { pos: plant, runP: 1, kickP: clamp(this.stateT() / TIMINGS.strike, 0, 1) }
+    }
+    if (this.state === 'flight' || this.state === 'aftermath' || this.state === 'done') {
+      return { pos: plant, runP: 1, kickP: 1 }
+    }
+    return { pos: start, runP: 0, kickP: 0 }
+  }
+
+  /** Batedor: camisa amarela, calcao azul. Vista de costas em tres quartos. */
+  private drawKicker(ctx: CanvasRenderingContext2D) {
+    const L = this.layout
+    const { pos, runP, kickP } = this.kickerAnchor()
+    const h = L.kickerH
+    const u = h / 7
+    const shirt = '#ffd23f'
+    const shirtShade = '#e6b31f'
+    const shorts = '#1f4fd0'
+    const skin = '#8a5a3b'
+    const socks = '#1f4fd0'
+    const boots = '#111318'
+
+    ctx.save()
+    ctx.translate(pos.x, pos.y)
+
+    // Sombra do jogador
+    ctx.fillStyle = 'rgba(8,30,14,0.35)'
+    ctx.beginPath()
+    ctx.ellipse(u * 0.2, u * 3.5, u * 1.7, u * 0.5, 0, 0, TAU)
+    ctx.fill()
+
+    const running = this.state === 'runup'
+    const stepPhase = runP * Math.PI * 2 * 3.2
+    const legSwing = running ? Math.sin(stepPhase) : 0
+    const idleBreath = this.state === 'ready' || this.state === 'aiming' ? Math.sin(this.now * 1.8) * u * 0.06 : 0
+
+    // Perna de apoio (esquerda)
+    const lHipX = -u * 0.35
+    const lHipY = u * 0.9
+    let lFootX = lHipX - u * 0.25 + (running ? legSwing * u * 0.9 : 0)
+    let lFootY = u * 3.35
+    // Perna do chute (direita)
+    const rHipX = u * 0.35
+    const rHipY = u * 0.9
+    let rFootX = rHipX + u * 0.25 - (running ? legSwing * u * 0.9 : 0)
+    let rFootY = u * 3.35
+
+    if (kickP > 0) {
+      // Balanco da perna do chute: de tras (cocked) para frente estendida
+      const swing = easeOutCubic(kickP)
+      const ang = lerp(Math.PI * 0.78, -Math.PI * 0.28, swing) // atras -> frente
+      const len = u * 2.5
+      rFootX = rHipX + Math.cos(ang + Math.PI / 2) * len * 0.9
+      rFootY = rHipY + Math.sin(ang + Math.PI / 2) * len
+      lFootX = lHipX - u * 0.3
+      lFootY = u * 3.35
+    }
+
+    // tronco inclina no chute
+    const lean = kickP > 0 ? lerp(0.06, -0.22, easeOutCubic(kickP)) : running ? 0.12 : 0.02
+    ctx.rotate(lean)
+
+    // Perna esquerda (apoio)
+    this.limb(ctx, lHipX, lHipY, lFootX, lFootY - u * 0.9, u * 0.62, skin)
+    this.limb(ctx, lFootX, lFootY - u * 0.95, lFootX, lFootY - u * 0.2, u * 0.55, socks)
+    this.limb(ctx, lFootX, lFootY - u * 0.15, lFootX - u * 0.42, lFootY, u * 0.42, boots)
+
+    // Calcao azul
+    ctx.fillStyle = shorts
+    ctx.beginPath()
+    ctx.moveTo(-u * 0.95, u * 0.15)
+    ctx.lineTo(u * 0.95, u * 0.15)
+    ctx.lineTo(u * 1.05, u * 1.35)
+    ctx.lineTo(u * 0.25, u * 1.5)
+    ctx.lineTo(0, u * 1.1)
+    ctx.lineTo(-u * 0.25, u * 1.5)
+    ctx.lineTo(-u * 1.05, u * 1.35)
+    ctx.closePath()
+    ctx.fill()
+
+    // Perna direita (chute) por cima do calcao
+    this.limb(ctx, rHipX, rHipY, rFootX, rFootY - u * 0.9, u * 0.62, skin)
+    this.limb(ctx, rFootX, rFootY - u * 0.95, rFootX, rFootY - u * 0.2, u * 0.55, socks)
+    this.limb(ctx, rFootX, rFootY - u * 0.15, rFootX + u * 0.45, rFootY + u * 0.05, u * 0.42, boots)
+
+    // Camisa amarela (vista de costas)
+    ctx.fillStyle = shirt
+    ctx.beginPath()
+    ctx.moveTo(-u * 1.1, -u * 2.1)
+    ctx.quadraticCurveTo(0, -u * 2.45, u * 1.1, -u * 2.1)
+    ctx.lineTo(u * 1.0, u * 0.35)
+    ctx.quadraticCurveTo(0, u * 0.6, -u * 1.0, u * 0.35)
+    ctx.closePath()
+    ctx.fill()
+    // Numero 9 nas costas
+    ctx.fillStyle = '#12326e'
+    ctx.font = `800 ${u * 1.15}px 'Segoe UI', sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('9', 0, -u * 0.85)
+    // Sombra lateral da camisa
+    ctx.fillStyle = shirtShade
+    ctx.beginPath()
+    ctx.moveTo(u * 0.7, -u * 2.16)
+    ctx.lineTo(u * 1.1, -u * 2.1)
+    ctx.lineTo(u * 1.0, u * 0.35)
+    ctx.lineTo(u * 0.72, u * 0.42)
+    ctx.closePath()
+    ctx.fill()
+
+    // Bracos
+    const armSwing = running ? Math.sin(stepPhase + Math.PI) * u * 0.7 : kickP > 0 ? lerp(u * 0.3, -u * 0.8, easeOutCubic(kickP)) : idleBreath * 3
+    this.limb(ctx, -u * 0.95, -u * 1.7, -u * 1.5, -u * 0.2 + armSwing, u * 0.45, shirt)
+    this.limb(ctx, u * 0.95, -u * 1.7, u * 1.5, -u * 0.2 - armSwing, u * 0.45, shirt)
+    ctx.fillStyle = skin
+    ctx.beginPath()
+    ctx.arc(-u * 1.5, -u * 0.2 + armSwing, u * 0.3, 0, TAU)
+    ctx.arc(u * 1.5, -u * 0.2 - armSwing, u * 0.3, 0, TAU)
+    ctx.fill()
+
+    // Cabeca (vista de tras: cabelo)
+    ctx.fillStyle = skin
+    ctx.beginPath()
+    ctx.arc(0, -u * 2.85 + idleBreath, u * 0.62, 0, TAU)
+    ctx.fill()
+    ctx.fillStyle = '#241509'
+    ctx.beginPath()
+    ctx.arc(0, -u * 2.9 + idleBreath, u * 0.6, Math.PI * 0.85, TAU * 1.075)
+    ctx.fill()
+
+    ctx.restore()
+  }
+
+  private drawBallShadow(ctx: CanvasRenderingContext2D) {
+    const L = this.layout
+    const groundY = this.state === 'flight' || this.state === 'aftermath' || this.state === 'done'
+      ? Math.max(this.ballPos.y, lerp(L.goalLineY, L.spot.y, 0.1))
+      : L.spot.y
+    const height = clamp((groundY - this.ballPos.y) / (L.H * 0.2), 0, 1)
+    ctx.fillStyle = `rgba(8,30,14,${lerp(0.4, 0.12, height)})`
+    ctx.beginPath()
+    ctx.ellipse(
+      this.ballPos.x,
+      groundY + L.ballR * 0.4,
+      L.ballR * this.ballScale * lerp(1.15, 0.7, height),
+      L.ballR * this.ballScale * 0.34,
+      0, 0, TAU
+    )
+    ctx.fill()
+  }
+
+  private drawBallTrail(ctx: CanvasRenderingContext2D) {
+    const n = this.ballTrail.length
+    if (n < 2) return
+    for (let i = 0; i < n; i++) {
+      const p = this.ballTrail[i]!
+      ctx.fillStyle = `rgba(255,255,255,${(0.22 * (i + 1)) / n})`
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.r * (0.5 + (0.4 * (i + 1)) / n), 0, TAU)
+      ctx.fill()
+    }
+  }
+
+  private drawBall(ctx: CanvasRenderingContext2D) {
+    const L = this.layout
+    const r = L.ballR * this.ballScale
+    const { x, y } = this.ballPos
+
+    ctx.save()
+    ctx.translate(x, y)
+
+    const grad = ctx.createRadialGradient(-r * 0.35, -r * 0.4, r * 0.15, 0, 0, r * 1.05)
+    grad.addColorStop(0, '#ffffff')
+    grad.addColorStop(0.75, '#e9edf2')
+    grad.addColorStop(1, '#b9c2cf')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(0, 0, r, 0, TAU)
+    ctx.fill()
+
+    // Gomos girando
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(0, 0, r, 0, TAU)
+    ctx.clip()
+    ctx.rotate(this.ballSpin)
+    ctx.fillStyle = '#20262e'
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * TAU
+      const px = Math.cos(a) * r * 0.62
+      const py = Math.sin(a) * r * 0.62
+      ctx.beginPath()
+      ctx.moveTo(px, py - r * 0.26)
+      for (let k = 1; k <= 5; k++) {
+        const b = a + (k / 5) * TAU
+        ctx.lineTo(px + Math.cos(b) * r * 0.26, py - r * 0.26 + Math.sin(b) * r * 0.26 + r * 0.13)
+      }
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.beginPath()
+    ctx.fillStyle = '#20262e'
+    for (let k = 0; k <= 5; k++) {
+      const b = (k / 5) * TAU - Math.PI / 2
+      const vx = Math.cos(b) * r * 0.3
+      const vy = Math.sin(b) * r * 0.3
+      k === 0 ? ctx.moveTo(vx, vy) : ctx.lineTo(vx, vy)
+    }
+    ctx.closePath()
+    ctx.fill()
+    ctx.restore()
+
+    // Brilho
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'
+    ctx.beginPath()
+    ctx.ellipse(-r * 0.35, -r * 0.45, r * 0.28, r * 0.18, -0.6, 0, TAU)
+    ctx.fill()
+
+    ctx.restore()
+  }
+
+  private drawAimHint(ctx: CanvasRenderingContext2D) {
+    if (this.state !== 'aiming' && this.state !== 'ready') return
+    const L = this.layout
+
+    if (this.state === 'aiming' && this.hasAim) {
+      const rect = this.goalInnerRect()
+      // Grade de zonas sutil
+      ctx.save()
+      ctx.strokeStyle = 'rgba(255,255,255,0.14)'
+      ctx.lineWidth = 1
+      for (let c = 1; c < 3; c++) {
+        const x = lerp(rect.left, rect.right, c / 3)
+        ctx.beginPath()
+        ctx.moveTo(x, rect.top)
+        ctx.lineTo(x, rect.bottom)
+        ctx.stroke()
+      }
+      const midY = lerp(rect.top, rect.bottom, 0.5)
+      ctx.beginPath()
+      ctx.moveTo(rect.left, midY)
+      ctx.lineTo(rect.right, midY)
+      ctx.stroke()
+
+      // Mira
+      const pulse = 1 + Math.sin(this.now * 7) * 0.08
+      const rr = L.ballR * 1.5 * pulse
+      const inGoal =
+        this.aim.x > rect.left && this.aim.x < rect.right &&
+        this.aim.y > rect.top && this.aim.y < rect.bottom
+      const color = inGoal ? 'rgba(141,255,90,0.95)' : 'rgba(255,110,90,0.95)'
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2.5
+      ctx.beginPath()
+      ctx.arc(this.aim.x, this.aim.y, rr, 0, TAU)
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(this.aim.x, this.aim.y, rr * 0.45, 0, TAU)
+      ctx.stroke()
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * TAU + Math.PI / 4
+        ctx.beginPath()
+        ctx.moveTo(this.aim.x + Math.cos(a) * rr * 1.15, this.aim.y + Math.sin(a) * rr * 1.15)
+        ctx.lineTo(this.aim.x + Math.cos(a) * rr * 1.5, this.aim.y + Math.sin(a) * rr * 1.5)
+        ctx.stroke()
+      }
+
+      // Linha tracejada da bola ate a mira
+      ctx.setLineDash([6, 8])
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(L.spot.x, L.spot.y - L.ballR)
+      ctx.quadraticCurveTo(
+        (L.spot.x + this.aim.x) / 2,
+        Math.min(L.spot.y, this.aim.y) - L.H * 0.05,
+        this.aim.x,
+        this.aim.y
+      )
+      ctx.stroke()
+      ctx.setLineDash([])
+      ctx.restore()
+    }
+  }
+
+  private drawConfetti(ctx: CanvasRenderingContext2D) {
+    for (const c of this.confetti) {
+      const age = (this.now - c.born) / c.life
+      ctx.save()
+      ctx.globalAlpha = clamp(1 - age, 0, 1)
+      ctx.translate(c.x, c.y)
+      ctx.rotate(c.rot)
+      ctx.fillStyle = c.color
+      ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h * (0.4 + Math.abs(Math.sin(c.rot * 2)) * 0.6))
+      ctx.restore()
+    }
+  }
+}
