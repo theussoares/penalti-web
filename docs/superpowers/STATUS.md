@@ -1,8 +1,25 @@
 # Status do projeto — Penalti Premiado 3D
 
-> Nota de retomada. Última atualização: 2026-07-03 (sessão longa, motor 3D +
-> ambientação). Se você é uma sessão nova pegando este projeto, leia isto
-> primeiro, depois os dois planos referenciados abaixo.
+> Nota de retomada. Última atualização: 2026-07-03 (sessão longa: motor 3D +
+> ambientação + fundo de imagem). Se você é uma sessão nova pegando este
+> projeto, leia isto primeiro, depois os planos/specs referenciados abaixo.
+
+## Próxima tarefa (spec aprovada, plano ainda não escrito)
+
+**`docs/superpowers/specs/2026-07-03-mira-automatica-resultado-api-design.md`**
+— mudança de mecânica aprovada pelo usuário, mas a implementação **ainda não
+começou** (nem o plano de implementação foi escrito). Resumo: a mira deixa de
+ser por toque/arraste e passa a ser automática (vaivém esquerda↔direita,
+altura fixa do goleiro) com um botão "Chutar"; o resultado (gol/defesa +
+prêmio) passa a vir de uma sequência pré-buscada da API no primeiro chute
+(reaproveitando o vocabulário `tipo_acao`/`tipo_premio`/`chave_giro` dos
+mocks de Roleta), e o goleiro só "encena" esse resultado já definido —
+mergulha exato se for defesa, longe se for gol. Isso **remove** o desfecho
+"pra fora" e simplifica bastante o motor (`aimInput.ts`/raycasting de mira
+sai, `goalkeeperAI.ts` muda de "calcula resultado" para "calcula onde o
+goleiro mergulha dado o resultado"). Próximo passo: rodar
+`superpowers:writing-plans` a partir dessa spec, depois executar (o padrão
+usado nas rodadas anteriores foi `subagent-driven-development`).
 
 ## Onde as coisas estão
 
@@ -11,7 +28,7 @@ mas não é mais usado) para Three.js/WebGL (`app/game/engine3d/`), orquestrado
 por `PenaltyEngine3D` (`app/game/engine3d/penaltyEngine3d.ts`), já ligado em
 `app/components/PenaltyGame.client.vue`.
 
-Duas rodadas de trabalho, dois planos:
+Três rodadas de trabalho até agora:
 
 1. **`docs/superpowers/specs/2026-07-03-motor-3d-threejs-design.md`** (spec) +
    **`docs/superpowers/plans/2026-07-03-motor-3d-threejs.md`** (plano, 16
@@ -21,11 +38,17 @@ Duas rodadas de trabalho, dois planos:
    usuário, comprimido com `gltf-transform` para ~635KB, com 4 clipes:
    `DiveLeft`/`DiveRight`/`CatchCenter`/clipe base de idle).
 2. **`docs/superpowers/plans/2026-07-03-ambientacao-premio.md`** (plano, 5
-   tasks) — segunda rodada de polimento visual: partículas/sheen no gramado,
-   fumaça + bandeirinhas atrás do gol, LED giratório de anúncios, refletores
-   com pulso, torcida com celebração de gol (onda + flashes).
+   tasks) — segunda rodada de polimento visual 3D: partículas/sheen no
+   gramado, fumaça + bandeirinhas atrás do gol, LED giratório de anúncios,
+   refletores com pulso, torcida com celebração de gol (onda + flashes).
+3. **Sem plano formal** — troca da ambientação 3D procedural por uma imagem
+   de fundo gerada por IA (`public/images/stadium-bg-{portrait,landscape}.webp`,
+   escolhida por proporção de tela via JS em `PenaltyGame.client.vue`, canvas
+   3D transparente por cima mostrando só gol/bola/personagens/sombras). Feito
+   direto (sem SDD formal) por já estar em modo de iteração visual rápida com
+   o usuário. Commit `4c83f05`.
 
-**As duas rodadas foram executadas por duas sessões de Claude Code rodando
+**As rodadas 1 e 2 foram executadas por duas sessões de Claude Code rodando
 em paralelo no mesmo repositório**, sem coordenação direta entre si — o que
 gerou alguma confusão (resets de estado durante testes manuais, hot-reload
 cruzado). Se você notar comportamento estranho num teste manual, considere
@@ -49,6 +72,15 @@ que pode haver outra sessão mexendo nos mesmos arquivos ao mesmo tempo.
 - **Bola tem física real de pós-impacto** (gravidade + quique + rede
   segurando no gol) — não congela mais no ar em defesa/fora como numa
   versão intermediária.
+- **Fundo é uma imagem estática gerada por IA**, não mais 3D procedural —
+  `buildCrowdBillboard`, `buildStadiumLights`, `buildAdBoards` e
+  `buildAmbientEffects` (torcida, refletores, telão, fumaça/bandeiras — toda
+  a Task 2 do plano de ambientação) **foram removidos do orquestrador**
+  (`penaltyEngine3d.ts`) nesta terceira rodada, embora os arquivos-fonte
+  ainda existam em `app/game/engine3d/` sem uso. `buildFieldAtmosphere`
+  (partículas/sheen) foi o único efeito ambiente 3D mantido, como brilho
+  sutil por cima da foto. O renderer roda com `alpha: true` para a imagem
+  aparecer atrás da cena WebGL.
 
 ## Pendências conhecidas
 
