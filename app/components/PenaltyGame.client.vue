@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { PenaltyEngine, type ShotOutcome, type EngineState } from '~/game/engine'
+import { PenaltyEngine3D } from '~/game/engine3d/penaltyEngine3d'
+import type { ShotOutcome, EngineState } from '~/game/types'
 import { Sfx } from '~/game/sfx'
 import type { GameInfo, Prize } from '~/composables/useGameApi'
 
@@ -16,7 +17,7 @@ const attempts = ref(0)
 const goals = ref(0)
 const displayAmount = ref(0)
 
-let engine: PenaltyEngine | null = null
+let engine: PenaltyEngine3D | null = null
 const sfx = new Sfx()
 let countUpRaf = 0
 
@@ -69,7 +70,7 @@ onMounted(async () => {
   game.value = (await fetchGames()).find((g) => g.active) ?? null
 
   if (!canvasRef.value) return
-  engine = new PenaltyEngine(canvasRef.value, {
+  engine = new PenaltyEngine3D(canvasRef.value, {
     onResult,
     onStateChange: (s) => {
       engineState.value = s

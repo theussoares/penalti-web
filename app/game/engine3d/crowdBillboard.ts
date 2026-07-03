@@ -25,14 +25,19 @@ export function buildCrowdBillboard(width: number, height: number): CrowdBillboa
   const textureA = new CanvasTexture(canvasA)
   const textureB = new CanvasTexture(canvasB)
 
-  const materialA = new MeshBasicMaterial({ map: textureA, transparent: true, opacity: 1 })
+  const materialA = new MeshBasicMaterial({ map: textureA })
   const materialB = new MeshBasicMaterial({ map: textureB, transparent: true, opacity: 0 })
 
   const geometry = new PlaneGeometry(width, height)
   const mesh = new Mesh(geometry, materialA)
 
+  // B fica NA FRENTE de A (mais perto da camera) para funcionar como um
+  // overlay de verdade — igual ao motor 2D, que desenha a torcida base (A)
+  // opaca e depois sobrepoe B por cima com opacidade variavel. A nunca muda
+  // de opacidade; so B pulsa. (Colocar B atras de A so revelaria B pelos
+  // vaos transparentes entre as figuras de A, nao como uma mistura de verdade.)
   const meshB = new Mesh(geometry.clone(), materialB)
-  meshB.position.z = -0.01
+  meshB.position.z = 0.01
   mesh.add(meshB)
 
   return {
@@ -40,11 +45,7 @@ export function buildCrowdBillboard(width: number, height: number): CrowdBillboa
     setExcitement(value, now) {
       const speed = value > 0 ? 9 : 2.2
       const phase = (Math.sin(now * speed) + 1) / 2
-      const opacityB = Math.min(1, Math.max(0, phase)) * (value > 0 ? 1 : 0.55)
-      // Crossfade simetrico: A cai conforme B sobe, para nao depender dos
-      // vaos transparentes entre as figuras de A para revelar B por baixo.
-      materialB.opacity = opacityB
-      materialA.opacity = 1 - opacityB
+      materialB.opacity = Math.min(1, Math.max(0, phase)) * (value > 0 ? 1 : 0.55)
     }
   }
 }
