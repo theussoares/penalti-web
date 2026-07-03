@@ -3,6 +3,19 @@ import { PenaltyEngine3D } from "~/game/engine3d/penaltyEngine3d";
 import type { ShotOutcome, EngineState } from "~/game/types";
 import { Sfx } from "~/game/sfx";
 import type { GameInfo, PenaltyPlayResult } from "~/composables/useGameApi";
+import { MOCK_SESSION_SIZE } from "~/composables/useGameApi";
+import {
+  chancesRestantes,
+  isSessionOver,
+  filtrarPremiosGanhados,
+  type PremioGanho,
+} from "~/game/session";
+import HistoricoBar from "~/components/HistoricoBar.vue";
+import ModalGol from "~/components/Modais/ModalGol.vue";
+import ModalDefendeu from "~/components/Modais/ModalDefendeu.vue";
+import ModalChuteExtra from "~/components/Modais/ModalChuteExtra.vue";
+import ModalChutarTudoConfirm from "~/components/Modais/ModalChutarTudoConfirm.vue";
+import ModalResumoChutarTudo from "~/components/Modais/ModalResumoChutarTudo.vue";
 
 const { fetchGames, fetchPlaySequence } = useGameApi();
 
@@ -25,72 +38,118 @@ function updateLayoutMode() {
 }
 
 const game = ref<GameInfo | null>(null);
-const modal = ref<"none" | "win" | "lose">("none");
-const prizeResult = ref<PenaltyPlayResult | null>(null);
 const muted = ref(false);
-const attempts = ref(0);
-const goals = ref(0);
+
+type ModalState =
+  | "none"
+  | "gol"
+  | "defendeu"
+  | "chute-extra"
+  | "chutar-tudo-confirmar"
+  | "chutar-tudo-progresso"
+  | "resumo-tudo";
+
+const modal = ref<ModalState>("none");
+const currentPlayResult = ref<PenaltyPlayResult | null>(null);
 const awaitingSequence = ref(false);
-const lastOutcome = ref<ShotOutcome | null>(null);
+const sessionStarted = ref(false);
+
+// Fila de resultados ja decididos pela API para a sessao inteira (buscada
+// uma unica vez, no primeiro "Chutar") e historico dos ja consumidos. Ambos
+// precisam ser reativos (ref) porque o contador de chances e a barra de
+// historico dependem deles.
+const playQueue = ref<PenaltyPlayResult[]>([]);
+const history = ref<PenaltyPlayResult[]>([]);
+const premiosChutarTudo = ref<PremioGanho[]>([]);
 
 let engine: PenaltyEngine3D | null = null;
 const sfx = new Sfx();
 
-// Sequencia de resultados ja decididos pela API — consumida um item por
-// chute. So ha espera visivel no primeiro chute da sessao; depois disso a
-// fila e reabastecida em segundo plano (maybeRefill), sem o jogador notar.
-const SEQUENCE_BATCH_SIZE = 10;
-const REFILL_THRESHOLD = 3;
-let playQueue: PenaltyPlayResult[] = [];
-let refillPromise: Promise<void> | null = null;
-let currentPlayResult: PenaltyPlayResult | null = null;
-
-function maybeRefill(gameId: string) {
-  if (playQueue.length >= REFILL_THRESHOLD || refillPromise) return;
-  refillPromise = fetchPlaySequence(gameId, SEQUENCE_BATCH_SIZE).then(
-    (more) => {
-      playQueue.push(...more);
-      refillPromise = null;
-    },
-  );
-}
-
-async function nextPlayResult(gameId: string): Promise<PenaltyPlayResult> {
-  if (playQueue.length === 0) {
-    playQueue = await fetchPlaySequence(gameId, SEQUENCE_BATCH_SIZE);
-  }
-  const result = playQueue.shift()!;
-  maybeRefill(gameId);
-  return result;
-}
+const chancesRestantesValue = computed(() =>
+  chancesRestantes(playQueue.value),
+);
+const sessaoEncerrada = computed(
+  () => sessionStarted.value && isSessionOver(playQueue.value),
+);
+const podeChutarTudo = computed(
+  () =>
+    chancesRestantesValue.value > 1 &&
+    !awaitingSequence.value &&
+    (engineState.value === "ready" || engineState.value === "aiming"),
+);
 
 async function onShootClick() {
-  if (!engine || awaitingSequence.value) return;
+  if (!engine || awaitingSequence.value || modal.value !== "none") return;
   const gameId = game.value?.id ?? "penalty-premiado";
-  if (playQueue.length === 0) awaitingSequence.value = true;
-  const result = await nextPlayResult(gameId);
-  awaitingSequence.value = false;
-  currentPlayResult = result;
-  engine.shoot(result.tipo_acao === "ganhou" ? "goal" : "save");
+  if (!sessionStarted.value) {
+    awaitingSequence.value = true;
+    playQueue.value = await fetchPlaySequence(gameId, MOCK_SESSION_SIZE);
+    sessionStarted.value = true;
+    awaitingSequence.value = false;
+  }
+  if (playQueue.value.length === 0) return;
+  const result = playQueue.value.shift()!;
+  currentPlayResult.value = result;
+  // O goleiro so encena visualmente — replay usa 'save' arbitrariamente,
+  // ja que nao ha um terceiro valor fisico na engine (ShotOutcome continua
+  // 'goal' | 'save'). Quem decide o modal certo e onResult(), lendo
+  // currentPlayResult.tipo_acao, nao esse valor fisico.
+  const engineOutcome: ShotOutcome =
+    result.tipo_acao === "ganhou" ? "goal" : "save";
+  engine.shoot(engineOutcome);
 }
 
 function onResult(outcome: ShotOutcome) {
-  lastOutcome.value = outcome;
-  attempts.value++;
-  if (outcome === "goal") {
-    goals.value++;
-    prizeResult.value = currentPlayResult;
-    modal.value = "win";
+  const result = currentPlayResult.value;
+  if (!result) return;
+  history.value.push(result);
+  if (result.tipo_acao === "ganhou") {
+    modal.value = "gol";
+  } else if (result.tipo_acao === "replay") {
+    modal.value = "chute-extra";
   } else {
-    modal.value = "lose";
+    modal.value = "defendeu";
   }
 }
 
-function retry() {
+function onModalContinuar() {
+  if (sessaoEncerrada.value) {
+    jogarNovamente();
+    return;
+  }
   modal.value = "none";
-  prizeResult.value = null;
+  currentPlayResult.value = null;
   engine?.reset();
   sfx.whistle();
+}
+
+function jogarNovamente() {
+  modal.value = "none";
+  currentPlayResult.value = null;
+  history.value = [];
+  sessionStarted.value = false;
+  playQueue.value = [];
+  engine?.reset();
+  sfx.whistle();
+}
+
+function abrirChutarTudoConfirm() {
+  if (!podeChutarTudo.value) return;
+  modal.value = "chutar-tudo-confirmar";
+}
+
+function confirmarChutarTudo() {
+  modal.value = "chutar-tudo-progresso";
+  // Nao re-anima a engine por item (levaria 2-3s x N chutes) — resolve
+  // todos os itens restantes da fila de uma vez so nos dados, com um
+  // loading falso, igual ao confirmarGirarTodas() da Roleta
+  // (play-components-web/src/components/Roleta/composables/useGirarRoleta.ts).
+  setTimeout(() => {
+    const consumidos = playQueue.value.splice(0);
+    history.value.push(...consumidos);
+    premiosChutarTudo.value = filtrarPremiosGanhados(consumidos);
+    modal.value = "resumo-tudo";
+  }, 1500);
 }
 
 function toggleMute() {
@@ -137,6 +196,13 @@ onBeforeUnmount(() => {
         />
       </div>
 
+      <div class="chances-hud" aria-hidden="true">
+        {{ chancesRestantesValue }}
+        {{
+          chancesRestantesValue === 1 ? "chance restante" : "chances restantes"
+        }}
+      </div>
+
       <!-- HUD -->
       <header class="hud">
         <button
@@ -174,7 +240,7 @@ onBeforeUnmount(() => {
         <button>Sair</button>
       </header>
 
-      <!-- Botao de chute -->
+      <!-- Botoes de chute -->
       <Transition name="fade">
         <div
           v-if="
@@ -183,6 +249,8 @@ onBeforeUnmount(() => {
           "
           class="hint"
         >
+          <HistoricoBar :history="history" />
+
           <button
             class="hint-badge shoot-btn"
             type="button"
@@ -191,90 +259,67 @@ onBeforeUnmount(() => {
           >
             {{ awaitingSequence ? "Carregando..." : "Chutar" }}
           </button>
+
+          <button
+            class="chutar-tudo-btn"
+            type="button"
+            :disabled="!podeChutarTudo"
+            @click="abrirChutarTudoConfirm"
+          >
+            Chutar tudo
+          </button>
         </div>
       </Transition>
 
       <!-- Modal de vitoria -->
       <Transition name="modal">
-        <div
-          v-if="modal === 'win'"
-          class="overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Voce ganhou"
-        >
-          <div class="card card-win">
-            <div class="rays" aria-hidden="true" />
-            <div class="badge badge-win">
-              <svg
-                viewBox="0 0 24 24"
-                width="44"
-                height="44"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M8 21h8" />
-                <path d="M12 17v4" />
-                <path d="M7 4h10v6a5 5 0 0 1-10 0V4Z" />
-                <path d="M7 6H4a3 3 0 0 0 3 5" />
-                <path d="M17 6h3a3 3 0 0 1-3 5" />
-              </svg>
-            </div>
-            <h2 class="card-title">GOOOL!</h2>
-            <p class="card-sub">Voce venceu o goleiro</p>
-
-            <div class="prize">
-              <span class="prize-label">Voce ganhou</span>
-              <strong class="prize-value">{{ prizeResult?.nome }}</strong>
-            </div>
-
-            <button class="btn btn-primary" type="button" @click="retry">
-              Jogar novamente
-            </button>
-          </div>
-        </div>
+        <ModalGol
+          v-if="modal === 'gol'"
+          :premio="currentPlayResult"
+          :ultima-chance="sessaoEncerrada"
+          @continuar="onModalContinuar"
+        />
       </Transition>
 
       <!-- Modal de derrota -->
       <Transition name="modal">
-        <div
-          v-if="modal === 'lose'"
-          class="overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Nao foi dessa vez"
-        >
-          <div class="card card-lose">
-            <div class="badge badge-lose">
-              <svg
-                viewBox="0 0 24 24"
-                width="44"
-                height="44"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M12 3c3.5 0 6 2 6 5.5V13a6 6 0 0 1-12 0V8.5C6 5 8.5 3 12 3Z"
-                />
-                <path d="M9 7v4M12 6.5V11M15 7v4" />
-              </svg>
-            </div>
-            <h2 class="card-title">Defendeu!</h2>
-            <p class="card-sub">O goleiro voou no canto certo.</p>
-            <p class="card-encourage">
-              Respira, ajusta a mira e manda de novo.
-            </p>
-            <button class="btn btn-primary" type="button" @click="retry">
-              Tentar novamente
-            </button>
-          </div>
-        </div>
+        <ModalDefendeu
+          v-if="modal === 'defendeu'"
+          :ultima-chance="sessaoEncerrada"
+          @continuar="onModalContinuar"
+        />
+      </Transition>
+
+      <!-- Modal de chute extra (replay) -->
+      <Transition name="modal">
+        <ModalChuteExtra
+          v-if="modal === 'chute-extra'"
+          :ultima-chance="sessaoEncerrada"
+          @continuar="onModalContinuar"
+        />
+      </Transition>
+
+      <!-- Confirmacao + progresso do "Chutar tudo" -->
+      <Transition name="modal">
+        <ModalChutarTudoConfirm
+          v-if="
+            modal === 'chutar-tudo-confirmar' ||
+            modal === 'chutar-tudo-progresso'
+          "
+          :fase="modal === 'chutar-tudo-progresso' ? 'progresso' : 'confirmar'"
+          :quantidade="chancesRestantesValue"
+          @confirmar="confirmarChutarTudo"
+          @cancelar="modal = 'none'"
+        />
+      </Transition>
+
+      <!-- Resumo do lote do "Chutar tudo" -->
+      <Transition name="modal">
+        <ModalResumoChutarTudo
+          v-if="modal === 'resumo-tudo'"
+          :premios="premiosChutarTudo"
+          @continuar="jogarNovamente"
+        />
       </Transition>
     </div>
   </div>
@@ -339,6 +384,23 @@ onBeforeUnmount(() => {
   filter: drop-shadow(0 0 10px rgba(255, 210, 63, 0.35));
 }
 
+.chances-hud {
+  position: absolute;
+  left: 50%;
+  top: 29%;
+  transform: translateX(-50%);
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(6, 18, 12, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 /* ------------------------------ HUD ------------------------------ */
 
 .hud {
@@ -354,34 +416,6 @@ onBeforeUnmount(() => {
   padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
   pointer-events: none;
   background: linear-gradient(180deg, rgba(2, 8, 16, 0.72), rgba(2, 8, 16, 0));
-}
-
-.scoreboard {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: rgba(6, 18, 12, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(6px);
-  color: #fff;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.score-goals {
-  font-size: 18px;
-  font-weight: 800;
-  color: #8dff5a;
-}
-
-.score-sep {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.score-attempts {
-  color: rgba(255, 255, 255, 0.55);
 }
 
 .mute-btn {
@@ -405,13 +439,17 @@ onBeforeUnmount(() => {
   transform: scale(0.92);
 }
 
-/* ------------------------------ Botao de chute ------------------------------ */
+/* ------------------------------ Botoes de chute ------------------------------ */
 
 .hint {
   position: absolute;
   left: 50%;
   bottom: calc(18px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   pointer-events: none;
 }
 
@@ -457,389 +495,30 @@ onBeforeUnmount(() => {
   }
 }
 
-/* ------------------------------ Modais ------------------------------ */
-
-.overlay {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  background: rgba(2, 8, 5, 0.62);
-  backdrop-filter: blur(7px);
-  z-index: 10;
-}
-
-.card {
-  position: relative;
-  width: min(92%, 400px);
-  border-radius: 22px;
-  padding: 30px 26px 26px;
-  text-align: center;
-  overflow: hidden;
-  background: linear-gradient(165deg, #0d2417, #071510 60%, #051009);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.card-win {
-  border-color: rgba(255, 210, 63, 0.45);
-  box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.55),
-    0 0 60px rgba(255, 210, 63, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.rays {
-  position: absolute;
-  inset: -60%;
-  -webkit-mask-image: radial-gradient(
-    circle 230px at 50% 41%,
-    rgba(0, 0, 0, 0.9) 0%,
-    rgba(0, 0, 0, 0.3) 55%,
-    transparent 100%
-  );
-  mask-image: radial-gradient(
-    circle 230px at 50% 41%,
-    rgba(0, 0, 0, 0.9) 0%,
-    rgba(0, 0, 0, 0.3) 55%,
-    transparent 100%
-  );
-  background: conic-gradient(
-    from 0deg,
-    rgba(255, 210, 63, 0.13) 0deg 18deg,
-    transparent 18deg 36deg,
-    rgba(255, 210, 63, 0.13) 36deg 54deg,
-    transparent 54deg 72deg,
-    rgba(255, 210, 63, 0.13) 72deg 90deg,
-    transparent 90deg 108deg,
-    rgba(255, 210, 63, 0.13) 108deg 126deg,
-    transparent 126deg 144deg,
-    rgba(255, 210, 63, 0.13) 144deg 162deg,
-    transparent 162deg 180deg,
-    rgba(255, 210, 63, 0.13) 180deg 198deg,
-    transparent 198deg 216deg,
-    rgba(255, 210, 63, 0.13) 216deg 234deg,
-    transparent 234deg 252deg,
-    rgba(255, 210, 63, 0.13) 252deg 270deg,
-    transparent 270deg 288deg,
-    rgba(255, 210, 63, 0.13) 288deg 306deg,
-    transparent 306deg 324deg,
-    rgba(255, 210, 63, 0.13) 324deg 342deg,
-    transparent 342deg 360deg
-  );
-  animation: rays-spin 14s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes rays-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.badge {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 84px;
-  height: 84px;
-  margin: 0 auto 14px;
-  border-radius: 50%;
-  animation: badge-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  animation-delay: 0.1s;
-}
-
-.badge-win {
-  color: #04120a;
-  background: radial-gradient(circle at 32% 28%, #ffe789, #ffd23f 55%, #d99a12);
-  box-shadow: 0 10px 30px rgba(255, 210, 63, 0.4);
-}
-
-.badge-win::after {
-  content: "";
-  position: absolute;
-  inset: -7px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 210, 63, 0.6);
-  animation: ring-pulse 1.8s ease-out infinite;
-}
-
-@keyframes ring-pulse {
-  0% {
-    transform: scale(0.92);
-    opacity: 0.9;
-  }
-  70% {
-    transform: scale(1.22);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1.22);
-    opacity: 0;
-  }
-}
-
-.badge-lose {
-  color: #ffe2dc;
-  background: radial-gradient(circle at 32% 28%, #4a5568, #2b3444 60%, #1a2230);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-}
-
-@keyframes badge-pop {
-  0% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-.card-title {
-  position: relative;
-  margin: 0;
-  font-size: 34px;
-  font-weight: 900;
-  letter-spacing: 0.03em;
-  color: #fff;
-  animation: rise-in 0.5s ease both;
-  animation-delay: 0.2s;
-}
-
-.card-win .card-title {
-  background: linear-gradient(
-    100deg,
-    #d99a12 0%,
-    #ffd23f 28%,
-    #fff3bd 50%,
-    #ffd23f 72%,
-    #d99a12 100%
-  );
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 0 18px rgba(255, 210, 63, 0.4));
-  animation:
-    rise-in 0.5s ease both,
-    title-shine 2.6s linear 0.7s infinite;
-}
-
-@keyframes title-shine {
-  0% {
-    background-position: 120% 0;
-  }
-  100% {
-    background-position: -120% 0;
-  }
-}
-
-.card-sub {
-  position: relative;
-  margin: 6px 0 0;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.72);
-  animation: rise-in 0.5s ease both;
-  animation-delay: 0.28s;
-}
-
-.card-encourage {
-  position: relative;
-  margin: 14px 0 0;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.55);
-  animation: rise-in 0.5s ease both;
-  animation-delay: 0.36s;
-}
-
-.card-lose::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 110, 90, 0.8),
-    transparent
-  );
-}
-
-.card-lose .badge-lose {
-  animation:
-    badge-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both,
-    lose-shake 0.5s ease 0.6s;
-}
-
-@keyframes lose-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  25% {
-    transform: translateX(-6px);
-  }
-  50% {
-    transform: translateX(5px);
-  }
-  75% {
-    transform: translateX(-3px);
-  }
-}
-
-@keyframes rise-in {
-  0% {
-    transform: translateY(14px);
-    opacity: 0;
-  }
-  100% {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-.prize {
-  position: relative;
-  margin: 20px 0 4px;
-  padding: 16px 14px;
-  border-radius: 16px;
-  background: linear-gradient(
-    170deg,
-    rgba(255, 210, 63, 0.1),
-    rgba(255, 255, 255, 0.04) 45%
-  );
-  border: 1px solid rgba(255, 210, 63, 0.35);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow: hidden;
-  animation: rise-in 0.5s ease both;
-  animation-delay: 0.4s;
-}
-
-.prize::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 46%;
-  background: linear-gradient(
-    105deg,
-    transparent,
-    rgba(255, 255, 255, 0.14) 50%,
-    transparent
-  );
-  animation: prize-shimmer 2.8s ease-in-out 1s infinite;
-  pointer-events: none;
-}
-
-@keyframes prize-shimmer {
-  0% {
-    left: -60%;
-  }
-  55% {
-    left: 115%;
-  }
-  100% {
-    left: 115%;
-  }
-}
-
-.prize-label {
-  font-size: 11px;
+.chutar-tudo-btn {
+  pointer-events: auto;
+  font-size: 12px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.prize-value {
-  font-size: 32px;
-  font-weight: 900;
   color: #8dff5a;
-  text-shadow: 0 0 24px rgba(141, 255, 90, 0.35);
-  animation:
-    value-pop 0.5s cubic-bezier(0.34, 1.5, 0.64, 1) 0.55s both,
-    value-glow 2.2s ease-in-out 1.1s infinite;
-}
-
-@keyframes value-pop {
-  0% {
-    transform: scale(0.6);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes value-glow {
-  0%,
-  100% {
-    text-shadow: 0 0 24px rgba(141, 255, 90, 0.35);
-  }
-  50% {
-    text-shadow: 0 0 38px rgba(141, 255, 90, 0.65);
-  }
-}
-
-.btn {
-  position: relative;
-  margin-top: 20px;
-  width: 100%;
-  padding: 14px 18px;
-  border: 0;
-  border-radius: 14px;
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
+  background: transparent;
+  border: 1px solid rgba(141, 255, 90, 0.5);
+  padding: 8px 22px;
+  border-radius: 999px;
   cursor: pointer;
   transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease,
-    filter 0.15s ease;
-  animation: rise-in 0.5s ease both;
-  animation-delay: 0.5s;
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
-.btn-primary {
-  color: #04120a;
-  background: linear-gradient(160deg, #ffe066, #ffd23f 55%, #eab308);
-  box-shadow: 0 10px 26px rgba(255, 210, 63, 0.32);
-  overflow: hidden;
+.chutar-tudo-btn:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
-.btn-primary::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 40%;
-  background: linear-gradient(
-    105deg,
-    transparent,
-    rgba(255, 255, 255, 0.45) 50%,
-    transparent
-  );
-  animation: prize-shimmer 3.2s ease-in-out 1.6s infinite;
-  pointer-events: none;
-}
-
-.btn-primary:hover {
-  filter: brightness(1.06);
-  transform: translateY(-1px);
-}
-
-.btn-primary:active {
-  transform: translateY(1px) scale(0.99);
+.chutar-tudo-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 /* ------------------------------ Transicoes ------------------------------ */
@@ -852,34 +531,6 @@ onBeforeUnmount(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-
-.modal-enter-active {
-  transition: opacity 0.3s ease;
-}
-
-.modal-leave-active {
-  transition: opacity 0.22s ease;
-}
-
-.modal-enter-active .card {
-  animation: card-in 0.45s cubic-bezier(0.34, 1.35, 0.64, 1) both;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-
-@keyframes card-in {
-  0% {
-    transform: translateY(30px) scale(0.92);
-    opacity: 0;
-  }
-  100% {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
 }
 
 @media (min-width: 900px) {
