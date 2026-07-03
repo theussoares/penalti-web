@@ -1,155 +1,192 @@
 <script setup lang="ts">
-import { PenaltyEngine3D } from '~/game/engine3d/penaltyEngine3d'
-import type { ShotOutcome, EngineState } from '~/game/types'
-import { Sfx } from '~/game/sfx'
-import type { GameInfo, PenaltyPlayResult } from '~/composables/useGameApi'
+import { PenaltyEngine3D } from "~/game/engine3d/penaltyEngine3d";
+import type { ShotOutcome, EngineState } from "~/game/types";
+import { Sfx } from "~/game/sfx";
+import type { GameInfo, PenaltyPlayResult } from "~/composables/useGameApi";
 
-const { fetchGames, fetchPlaySequence } = useGameApi()
+const { fetchGames, fetchPlaySequence } = useGameApi();
 
-const canvasRef = ref<HTMLCanvasElement | null>(null)
-const engineState = ref<EngineState>('ready')
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+const engineState = ref<EngineState>("ready");
 // Fundo de estadio gerado por IA: retrato para celular, paisagem para
 // desktop. A proporcao da cena fica travada na proporcao da imagem para o
 // gol/goleiro 3D (renderizados por cima, canvas transparente) baterem
 // certinho com o gramado da foto em qualquer tamanho de tela.
-const PORTRAIT_ASPECT = 853 / 1844
-const LANDSCAPE_ASPECT = 1536 / 1024
-const isDesktopLayout = ref(false)
-const stageSize = ref({ width: 0, height: 0 })
+const PORTRAIT_ASPECT = 853 / 1844;
+const LANDSCAPE_ASPECT = 1536 / 1024;
+const isDesktopLayout = ref(false);
+const stageSize = ref({ width: 0, height: 0 });
 const bgImage = computed(() =>
-  isDesktopLayout.value ? '/images/stadium-bg-landscape.webp' : '/images/stadium-bg-portrait.webp'
-)
+  isDesktopLayout.value
+    ? "/images/stadium-bg-landscape.webp"
+    : "/images/stadium-bg-portrait.webp",
+);
 
 function updateLayoutMode() {
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  isDesktopLayout.value = vw / vh >= 1
-  const ratio = isDesktopLayout.value ? LANDSCAPE_ASPECT : PORTRAIT_ASPECT
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  isDesktopLayout.value = vw / vh >= 1;
+  const ratio = isDesktopLayout.value ? LANDSCAPE_ASPECT : PORTRAIT_ASPECT;
   // Encaixa a proporcao travada da imagem dentro da viewport: usa a
   // dimensao que "sobra" como barra (pillarbox/letterbox), sem esticar.
   stageSize.value =
     vw / vh > ratio
       ? { width: vh * ratio, height: vh }
-      : { width: vw, height: vw / ratio }
+      : { width: vw, height: vw / ratio };
 }
 
 // Confete decorativo continuo (telao + arquibancada da foto de fundo) —
 // espalhamento deterministico via aritmetica modular, sem Math.random(),
 // pra nao gerar layout diferente a cada re-render.
-const CONFETTI_COLORS = ['#8dff5a', '#ffd23f', '#38bdf8', '#ffffff']
+const CONFETTI_COLORS = ["#8dff5a", "#ffd23f", "#38bdf8", "#ffffff"];
 const confettiPieces = Array.from({ length: 18 }, (_, i) => ({
   left: (i * 37) % 100,
   delay: -((i * 1.3) % 7),
   duration: 5 + (i % 5) * 0.7,
   drift: `${(i % 2 === 0 ? 1 : -1) * (20 + (i % 4) * 10)}px`,
-  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length]
-}))
+  color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+}));
 
-const game = ref<GameInfo | null>(null)
-const modal = ref<'none' | 'win' | 'lose'>('none')
-const prizeResult = ref<PenaltyPlayResult | null>(null)
-const muted = ref(false)
-const attempts = ref(0)
-const goals = ref(0)
-const awaitingSequence = ref(false)
+const game = ref<GameInfo | null>(null);
+const modal = ref<"none" | "win" | "lose">("none");
+const prizeResult = ref<PenaltyPlayResult | null>(null);
+const muted = ref(false);
+const attempts = ref(0);
+const goals = ref(0);
+const awaitingSequence = ref(false);
+const lastOutcome = ref<ShotOutcome | null>(null);
 
-let engine: PenaltyEngine3D | null = null
-const sfx = new Sfx()
+// Cor dos LEDs do perimetro, sincronizada com o lance — a faixa ja vem
+// verde pintada na foto de fundo; um overlay com mix-blend-mode: hue (ver
+// .led-strip) troca so o matiz, mantendo o brilho/textura das luzes.
+const LED_COLORS = {
+  normal: "#5eff6c",
+  aiming: "#ffd23f",
+  shooting: "#ff8c1a",
+  goal: "#5eff6c",
+  save: "#ff3b3b",
+};
+const ledColor = computed(() => {
+  if (
+    engineState.value === "runup" ||
+    engineState.value === "strike" ||
+    engineState.value === "flight"
+  ) {
+    return LED_COLORS.shooting;
+  }
+  if (engineState.value === "aftermath" || engineState.value === "done") {
+    return lastOutcome.value === "goal" ? LED_COLORS.goal : LED_COLORS.save;
+  }
+  if (engineState.value === "aiming") {
+    return LED_COLORS.aiming;
+  }
+  return LED_COLORS.normal;
+});
+
+let engine: PenaltyEngine3D | null = null;
+const sfx = new Sfx();
 
 // Sequencia de resultados ja decididos pela API — consumida um item por
 // chute. So ha espera visivel no primeiro chute da sessao; depois disso a
 // fila e reabastecida em segundo plano (maybeRefill), sem o jogador notar.
-const SEQUENCE_BATCH_SIZE = 10
-const REFILL_THRESHOLD = 3
-let playQueue: PenaltyPlayResult[] = []
-let refillPromise: Promise<void> | null = null
-let currentPlayResult: PenaltyPlayResult | null = null
+const SEQUENCE_BATCH_SIZE = 10;
+const REFILL_THRESHOLD = 3;
+let playQueue: PenaltyPlayResult[] = [];
+let refillPromise: Promise<void> | null = null;
+let currentPlayResult: PenaltyPlayResult | null = null;
 
 function maybeRefill(gameId: string) {
-  if (playQueue.length >= REFILL_THRESHOLD || refillPromise) return
-  refillPromise = fetchPlaySequence(gameId, SEQUENCE_BATCH_SIZE).then((more) => {
-    playQueue.push(...more)
-    refillPromise = null
-  })
+  if (playQueue.length >= REFILL_THRESHOLD || refillPromise) return;
+  refillPromise = fetchPlaySequence(gameId, SEQUENCE_BATCH_SIZE).then(
+    (more) => {
+      playQueue.push(...more);
+      refillPromise = null;
+    },
+  );
 }
 
 async function nextPlayResult(gameId: string): Promise<PenaltyPlayResult> {
   if (playQueue.length === 0) {
-    playQueue = await fetchPlaySequence(gameId, SEQUENCE_BATCH_SIZE)
+    playQueue = await fetchPlaySequence(gameId, SEQUENCE_BATCH_SIZE);
   }
-  const result = playQueue.shift()!
-  maybeRefill(gameId)
-  return result
+  const result = playQueue.shift()!;
+  maybeRefill(gameId);
+  return result;
 }
 
 async function onShootClick() {
-  if (!engine || awaitingSequence.value) return
-  const gameId = game.value?.id ?? 'penalty-premiado'
-  if (playQueue.length === 0) awaitingSequence.value = true
-  const result = await nextPlayResult(gameId)
-  awaitingSequence.value = false
-  currentPlayResult = result
-  engine.shoot(result.tipo_acao === 'ganhou' ? 'goal' : 'save')
+  if (!engine || awaitingSequence.value) return;
+  const gameId = game.value?.id ?? "penalty-premiado";
+  if (playQueue.length === 0) awaitingSequence.value = true;
+  const result = await nextPlayResult(gameId);
+  awaitingSequence.value = false;
+  currentPlayResult = result;
+  engine.shoot(result.tipo_acao === "ganhou" ? "goal" : "save");
 }
 
 function onResult(outcome: ShotOutcome) {
-  attempts.value++
-  if (outcome === 'goal') {
-    goals.value++
-    prizeResult.value = currentPlayResult
-    modal.value = 'win'
+  lastOutcome.value = outcome;
+  attempts.value++;
+  if (outcome === "goal") {
+    goals.value++;
+    prizeResult.value = currentPlayResult;
+    modal.value = "win";
   } else {
-    modal.value = 'lose'
+    modal.value = "lose";
   }
 }
 
 function retry() {
-  modal.value = 'none'
-  prizeResult.value = null
-  engine?.reset()
-  sfx.whistle()
+  modal.value = "none";
+  prizeResult.value = null;
+  engine?.reset();
+  sfx.whistle();
 }
 
 function toggleMute() {
-  muted.value = !muted.value
-  sfx.setMuted(muted.value)
+  muted.value = !muted.value;
+  sfx.setMuted(muted.value);
 }
 
 onMounted(async () => {
-  updateLayoutMode()
-  window.addEventListener('resize', updateLayoutMode)
+  updateLayoutMode();
+  window.addEventListener("resize", updateLayoutMode);
 
-  game.value = (await fetchGames()).find((g) => g.active) ?? null
+  game.value = (await fetchGames()).find((g) => g.active) ?? null;
 
-  if (!canvasRef.value) return
+  if (!canvasRef.value) return;
   engine = new PenaltyEngine3D(canvasRef.value, {
     onResult,
     onStateChange: (s) => {
-      engineState.value = s
-      if (s === 'aiming') sfx.startAmbient()
+      engineState.value = s;
+      if (s === "aiming") sfx.startAmbient();
     },
     onKick: () => sfx.kick(),
-    onImpact: (outcome) => (outcome === 'goal' ? sfx.roar() : sfx.groan())
-  })
-})
+    onImpact: (outcome) => (outcome === "goal" ? sfx.roar() : sfx.groan()),
+  });
+});
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', updateLayoutMode)
-  engine?.destroy()
-  sfx.destroy()
-})
+  window.removeEventListener("resize", updateLayoutMode);
+  engine?.destroy();
+  sfx.destroy();
+});
 </script>
 
 <template>
   <div class="stage-viewport">
-  <div
-    class="stage"
-    :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, backgroundImage: `url(${bgImage})` }"
-  >
-    <canvas ref="canvasRef" class="game-canvas" />
+    <div
+      class="stage"
+      :style="{
+        width: `${stageSize.width}px`,
+        height: `${stageSize.height}px`,
+        backgroundImage: `url(${bgImage})`,
+      }"
+    >
+      <canvas ref="canvasRef" class="game-canvas" />
 
-    <!-- Confete continuo, sutil, por cima da foto de fundo -->
-    <!-- <div class="confetti-layer" aria-hidden="true">
+      <!-- Confete continuo, sutil, por cima da foto de fundo -->
+      <!-- <div class="confetti-layer" aria-hidden="true">
       <span
         v-for="(piece, i) in confettiPieces"
         :key="i"
@@ -164,93 +201,172 @@ onBeforeUnmount(() => {
       />
     </div> -->
 
-    <!-- Telao central: usa o quadro ja pintado na foto de fundo -->
-    <div class="jumbotron" aria-hidden="true">
-      <img class="jumbotron-logo" src="/images/penalti-premiado-logo.png" alt="" />
+      <!-- Telao central: usa o quadro ja pintado na foto de fundo -->
+      <div class="jumbotron" aria-hidden="true">
+        <img
+          class="jumbotron-logo"
+          src="/images/penalti-premiado-logo.png"
+          alt=""
+        />
+      </div>
+
+      <!-- LEDs do perimetro: recolore a faixa verde ja pintada na foto
+           conforme o estado do lance (ver ledColor). -->
+      <div
+        class="led-strip"
+        aria-hidden="true"
+        :style="{ backgroundColor: ledColor }"
+      />
+
+      <!-- HUD -->
+      <header class="hud">
+        <div class="hud-title">
+          <h1>{{ game?.name ?? "Penalti Premiado" }}</h1>
+          <p v-if="game">{{ game.headline }}</p>
+        </div>
+        <div class="hud-right">
+          <div class="scoreboard" aria-label="Placar">
+            <span class="score-goals">{{ goals }}</span>
+            <span class="score-sep">gols</span>
+            <span class="score-attempts">{{ attempts }} chutes</span>
+          </div>
+          <button
+            class="mute-btn"
+            type="button"
+            :aria-label="muted ? 'Ativar som' : 'Desativar som'"
+            @click="toggleMute"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polygon
+                points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"
+                fill="currentColor"
+                stroke="none"
+              />
+              <template v-if="!muted">
+                <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+              </template>
+              <template v-else>
+                <line x1="15" y1="9" x2="21" y2="15" />
+                <line x1="21" y1="9" x2="15" y2="15" />
+              </template>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Botao de chute -->
+      <Transition name="fade">
+        <div
+          v-if="
+            modal === 'none' &&
+            (engineState === 'ready' || engineState === 'aiming')
+          "
+          class="hint"
+        >
+          <button
+            class="hint-badge shoot-btn"
+            type="button"
+            :disabled="awaitingSequence"
+            @click="onShootClick"
+          >
+            {{ awaitingSequence ? "Carregando..." : "Chutar" }}
+          </button>
+        </div>
+      </Transition>
+
+      <!-- Modal de vitoria -->
+      <Transition name="modal">
+        <div
+          v-if="modal === 'win'"
+          class="overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Voce ganhou"
+        >
+          <div class="card card-win">
+            <div class="rays" aria-hidden="true" />
+            <div class="badge badge-win">
+              <svg
+                viewBox="0 0 24 24"
+                width="44"
+                height="44"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M8 21h8" />
+                <path d="M12 17v4" />
+                <path d="M7 4h10v6a5 5 0 0 1-10 0V4Z" />
+                <path d="M7 6H4a3 3 0 0 0 3 5" />
+                <path d="M17 6h3a3 3 0 0 1-3 5" />
+              </svg>
+            </div>
+            <h2 class="card-title">GOOOL!</h2>
+            <p class="card-sub">Voce venceu o goleiro</p>
+
+            <div class="prize">
+              <span class="prize-label">Voce ganhou</span>
+              <strong class="prize-value">{{ prizeResult?.nome }}</strong>
+            </div>
+
+            <button class="btn btn-primary" type="button" @click="retry">
+              Jogar novamente
+            </button>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Modal de derrota -->
+      <Transition name="modal">
+        <div
+          v-if="modal === 'lose'"
+          class="overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Nao foi dessa vez"
+        >
+          <div class="card card-lose">
+            <div class="badge badge-lose">
+              <svg
+                viewBox="0 0 24 24"
+                width="44"
+                height="44"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M12 3c3.5 0 6 2 6 5.5V13a6 6 0 0 1-12 0V8.5C6 5 8.5 3 12 3Z"
+                />
+                <path d="M9 7v4M12 6.5V11M15 7v4" />
+              </svg>
+            </div>
+            <h2 class="card-title">Defendeu!</h2>
+            <p class="card-sub">O goleiro voou no canto certo.</p>
+            <p class="card-encourage">
+              Respira, ajusta a mira e manda de novo.
+            </p>
+            <button class="btn btn-primary" type="button" @click="retry">
+              Tentar novamente
+            </button>
+          </div>
+        </div>
+      </Transition>
     </div>
-
-    <!-- HUD -->
-    <header class="hud">
-      <div class="hud-title">
-        <h1>{{ game?.name ?? 'Penalti Premiado' }}</h1>
-        <p v-if="game">{{ game.headline }}</p>
-      </div>
-      <div class="hud-right">
-        <div class="scoreboard" aria-label="Placar">
-          <span class="score-goals">{{ goals }}</span>
-          <span class="score-sep">gols</span>
-          <span class="score-attempts">{{ attempts }} chutes</span>
-        </div>
-        <button class="mute-btn" type="button" :aria-label="muted ? 'Ativar som' : 'Desativar som'" @click="toggleMute">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none" />
-            <template v-if="!muted">
-              <path d="M15.5 8.5a5 5 0 0 1 0 7" />
-              <path d="M18.5 5.5a9 9 0 0 1 0 13" />
-            </template>
-            <template v-else>
-              <line x1="15" y1="9" x2="21" y2="15" />
-              <line x1="21" y1="9" x2="15" y2="15" />
-            </template>
-          </svg>
-        </button>
-      </div>
-    </header>
-
-    <!-- Botao de chute -->
-    <Transition name="fade">
-      <div v-if="modal === 'none' && (engineState === 'ready' || engineState === 'aiming')" class="hint">
-        <button class="hint-badge shoot-btn" type="button" :disabled="awaitingSequence" @click="onShootClick">
-          {{ awaitingSequence ? 'Carregando...' : 'Chutar' }}
-        </button>
-      </div>
-    </Transition>
-
-    <!-- Modal de vitoria -->
-    <Transition name="modal">
-      <div v-if="modal === 'win'" class="overlay" role="dialog" aria-modal="true" aria-label="Voce ganhou">
-        <div class="card card-win">
-          <div class="rays" aria-hidden="true" />
-          <div class="badge badge-win">
-            <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 21h8" />
-              <path d="M12 17v4" />
-              <path d="M7 4h10v6a5 5 0 0 1-10 0V4Z" />
-              <path d="M7 6H4a3 3 0 0 0 3 5" />
-              <path d="M17 6h3a3 3 0 0 1-3 5" />
-            </svg>
-          </div>
-          <h2 class="card-title">GOOOL!</h2>
-          <p class="card-sub">Voce venceu o goleiro</p>
-
-          <div class="prize">
-            <span class="prize-label">Voce ganhou</span>
-            <strong class="prize-value">{{ prizeResult?.nome }}</strong>
-          </div>
-
-          <button class="btn btn-primary" type="button" @click="retry">Jogar novamente</button>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- Modal de derrota -->
-    <Transition name="modal">
-      <div v-if="modal === 'lose'" class="overlay" role="dialog" aria-modal="true" aria-label="Nao foi dessa vez">
-        <div class="card card-lose">
-          <div class="badge badge-lose">
-            <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 3c3.5 0 6 2 6 5.5V13a6 6 0 0 1-12 0V8.5C6 5 8.5 3 12 3Z" />
-              <path d="M9 7v4M12 6.5V11M15 7v4" />
-            </svg>
-          </div>
-          <h2 class="card-title">Defendeu!</h2>
-          <p class="card-sub">O goleiro voou no canto certo.</p>
-          <p class="card-encourage">Respira, ajusta a mira e manda de novo.</p>
-          <button class="btn btn-primary" type="button" @click="retry">Tentar novamente</button>
-        </div>
-      </div>
-    </Transition>
-  </div>
   </div>
 </template>
 
@@ -318,10 +434,20 @@ onBeforeUnmount(() => {
 }
 
 @keyframes confetti-fall {
-  0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(0deg); }
-  8% { opacity: 0.9; }
-  92% { opacity: 0.9; }
-  100% { opacity: 0; transform: translate3d(var(--drift), 120vh, 0) rotate(480deg); }
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  8% {
+    opacity: 0.9;
+  }
+  92% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--drift), 120vh, 0) rotate(480deg);
+  }
 }
 
 /* ------------------------------ Telao ------------------------------ */
@@ -329,7 +455,7 @@ onBeforeUnmount(() => {
 .jumbotron {
   position: absolute;
   left: 50%;
-  top: 27.6%;
+  top: 29.6%;
   width: 30%;
   height: 8%;
   transform: translateX(-50%);
@@ -343,6 +469,23 @@ onBeforeUnmount(() => {
   height: 100%;
   object-fit: contain;
   filter: drop-shadow(0 0 10px rgba(255, 210, 63, 0.35));
+}
+
+/* ------------------------------ LEDs do perimetro ------------------------------ */
+
+.led-strip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 49.3%;
+  height: 2%;
+  /* screen soma luz sobre o que ja esta pintado na foto (as luzes verdes),
+     preservando a textura das estrelas/chevrons por baixo — troca de
+     estado sem redesenhar nada. hue/color blend ficaram apagados demais
+     nesta imagem, screen foi o unico que leu bem em todas as cores. */
+  mix-blend-mode: screen;
+  pointer-events: none;
+  transition: background-color 0.25s ease;
 }
 
 /* ------------------------------ HUD ------------------------------ */
@@ -423,7 +566,9 @@ onBeforeUnmount(() => {
   color: #fff;
   cursor: pointer;
   backdrop-filter: blur(6px);
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
 }
 
 .mute-btn:active {
@@ -457,7 +602,9 @@ onBeforeUnmount(() => {
   border: 0;
   cursor: pointer;
   box-shadow: 0 10px 26px rgba(141, 255, 90, 0.32);
-  transition: transform 0.15s ease, filter 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease;
 }
 
 .shoot-btn:active:not(:disabled) {
@@ -471,8 +618,13 @@ onBeforeUnmount(() => {
 }
 
 @keyframes hint-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.07); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.07);
+  }
 }
 
 /* ------------------------------ Modais ------------------------------ */
@@ -497,7 +649,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
   background: linear-gradient(165deg, #0d2417, #071510 60%, #051009);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .card-win {
@@ -511,8 +665,18 @@ onBeforeUnmount(() => {
 .rays {
   position: absolute;
   inset: -60%;
-  -webkit-mask-image: radial-gradient(circle 230px at 50% 41%, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.3) 55%, transparent 100%);
-  mask-image: radial-gradient(circle 230px at 50% 41%, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.3) 55%, transparent 100%);
+  -webkit-mask-image: radial-gradient(
+    circle 230px at 50% 41%,
+    rgba(0, 0, 0, 0.9) 0%,
+    rgba(0, 0, 0, 0.3) 55%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    circle 230px at 50% 41%,
+    rgba(0, 0, 0, 0.9) 0%,
+    rgba(0, 0, 0, 0.3) 55%,
+    transparent 100%
+  );
   background: conic-gradient(
     from 0deg,
     rgba(255, 210, 63, 0.13) 0deg 18deg,
@@ -541,7 +705,9 @@ onBeforeUnmount(() => {
 }
 
 @keyframes rays-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .badge {
@@ -563,7 +729,7 @@ onBeforeUnmount(() => {
 }
 
 .badge-win::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: -7px;
   border-radius: 50%;
@@ -572,9 +738,18 @@ onBeforeUnmount(() => {
 }
 
 @keyframes ring-pulse {
-  0% { transform: scale(0.92); opacity: 0.9; }
-  70% { transform: scale(1.22); opacity: 0; }
-  100% { transform: scale(1.22); opacity: 0; }
+  0% {
+    transform: scale(0.92);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
 }
 
 .badge-lose {
@@ -584,8 +759,14 @@ onBeforeUnmount(() => {
 }
 
 @keyframes badge-pop {
-  0% { transform: scale(0); opacity: 0; }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .card-title {
@@ -600,18 +781,31 @@ onBeforeUnmount(() => {
 }
 
 .card-win .card-title {
-  background: linear-gradient(100deg, #d99a12 0%, #ffd23f 28%, #fff3bd 50%, #ffd23f 72%, #d99a12 100%);
+  background: linear-gradient(
+    100deg,
+    #d99a12 0%,
+    #ffd23f 28%,
+    #fff3bd 50%,
+    #ffd23f 72%,
+    #d99a12 100%
+  );
   background-size: 220% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   filter: drop-shadow(0 0 18px rgba(255, 210, 63, 0.4));
-  animation: rise-in 0.5s ease both, title-shine 2.6s linear 0.7s infinite;
+  animation:
+    rise-in 0.5s ease both,
+    title-shine 2.6s linear 0.7s infinite;
 }
 
 @keyframes title-shine {
-  0% { background-position: 120% 0; }
-  100% { background-position: -120% 0; }
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
 }
 
 .card-sub {
@@ -633,29 +827,51 @@ onBeforeUnmount(() => {
 }
 
 .card-lose::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, transparent, rgba(255, 110, 90, 0.8), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 110, 90, 0.8),
+    transparent
+  );
 }
 
 .card-lose .badge-lose {
-  animation: badge-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both, lose-shake 0.5s ease 0.6s;
+  animation:
+    badge-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+    lose-shake 0.5s ease 0.6s;
 }
 
 @keyframes lose-shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-6px); }
-  50% { transform: translateX(5px); }
-  75% { transform: translateX(-3px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-6px);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+  75% {
+    transform: translateX(-3px);
+  }
 }
 
 @keyframes rise-in {
-  0% { transform: translateY(14px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
+  0% {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .prize {
@@ -663,7 +879,11 @@ onBeforeUnmount(() => {
   margin: 20px 0 4px;
   padding: 16px 14px;
   border-radius: 16px;
-  background: linear-gradient(170deg, rgba(255, 210, 63, 0.1), rgba(255, 255, 255, 0.04) 45%);
+  background: linear-gradient(
+    170deg,
+    rgba(255, 210, 63, 0.1),
+    rgba(255, 255, 255, 0.04) 45%
+  );
   border: 1px solid rgba(255, 210, 63, 0.35);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   display: flex;
@@ -675,20 +895,31 @@ onBeforeUnmount(() => {
 }
 
 .prize::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   bottom: 0;
   width: 46%;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.14) 50%, transparent);
+  background: linear-gradient(
+    105deg,
+    transparent,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent
+  );
   animation: prize-shimmer 2.8s ease-in-out 1s infinite;
   pointer-events: none;
 }
 
 @keyframes prize-shimmer {
-  0% { left: -60%; }
-  55% { left: 115%; }
-  100% { left: 115%; }
+  0% {
+    left: -60%;
+  }
+  55% {
+    left: 115%;
+  }
+  100% {
+    left: 115%;
+  }
 }
 
 .prize-label {
@@ -704,17 +935,30 @@ onBeforeUnmount(() => {
   font-weight: 900;
   color: #8dff5a;
   text-shadow: 0 0 24px rgba(141, 255, 90, 0.35);
-  animation: value-pop 0.5s cubic-bezier(0.34, 1.5, 0.64, 1) 0.55s both, value-glow 2.2s ease-in-out 1.1s infinite;
+  animation:
+    value-pop 0.5s cubic-bezier(0.34, 1.5, 0.64, 1) 0.55s both,
+    value-glow 2.2s ease-in-out 1.1s infinite;
 }
 
 @keyframes value-pop {
-  0% { transform: scale(0.6); opacity: 0; }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @keyframes value-glow {
-  0%, 100% { text-shadow: 0 0 24px rgba(141, 255, 90, 0.35); }
-  50% { text-shadow: 0 0 38px rgba(141, 255, 90, 0.65); }
+  0%,
+  100% {
+    text-shadow: 0 0 24px rgba(141, 255, 90, 0.35);
+  }
+  50% {
+    text-shadow: 0 0 38px rgba(141, 255, 90, 0.65);
+  }
 }
 
 .btn {
@@ -728,7 +972,10 @@ onBeforeUnmount(() => {
   font-weight: 800;
   letter-spacing: 0.03em;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
   animation: rise-in 0.5s ease both;
   animation-delay: 0.5s;
 }
@@ -741,12 +988,17 @@ onBeforeUnmount(() => {
 }
 
 .btn-primary::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   bottom: 0;
   width: 40%;
-  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.45) 50%, transparent);
+  background: linear-gradient(
+    105deg,
+    transparent,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent
+  );
   animation: prize-shimmer 3.2s ease-in-out 1.6s infinite;
   pointer-events: none;
 }
@@ -790,8 +1042,14 @@ onBeforeUnmount(() => {
 }
 
 @keyframes card-in {
-  0% { transform: translateY(30px) scale(0.92); opacity: 0; }
-  100% { transform: translateY(0) scale(1); opacity: 1; }
+  0% {
+    transform: translateY(30px) scale(0.92);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
 }
 
 @media (min-width: 900px) {

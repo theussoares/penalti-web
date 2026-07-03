@@ -83,7 +83,9 @@ function buildSmoke(layout: WorldLayout): { group: Group; update(now: number): v
       swayAmplitude: randomRange(0.15, 0.35),
       freq: (Math.PI * 2) / randomRange(SMOKE_CYCLE_MIN, SMOKE_CYCLE_MAX),
       phase: randomRange(0, Math.PI * 2),
-      peakOpacity: randomRange(0.12, 0.2)
+      // Quase imperceptivel de proposito — reforca profundidade atras do
+      // gol sem competir visualmente com o telao/torcida da foto.
+      peakOpacity: randomRange(0.06, 0.1)
     })
   }
 
@@ -228,4 +230,10 @@ export function buildAmbientEffects(layout: WorldLayout): AmbientEffects {
   }
 
   return { object3D: group, update }
+}
+
+/** So a fumaca de `buildAmbientEffects`, sem as bandeirinhas de canto. */
+export function buildAmbientSmoke(layout: WorldLayout): AmbientEffects {
+  const smoke = buildSmoke(layout)
+  return { object3D: smoke.group, update: smoke.update }
 }

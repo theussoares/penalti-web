@@ -9,6 +9,7 @@ import {
 import type { EngineCallbacks, EngineState, ShotOutcome, Vec2 } from '../types'
 import type { Character } from './character'
 import { createCharacter } from './character'
+import { buildAmbientSmoke, type AmbientEffects } from './ambientEffects'
 import { buildBallMesh } from './ballMesh'
 import { arcHeight, ballFlightPosition } from './ballFlight'
 import { buildAimReticle, type AimReticle } from './aimReticle'
@@ -25,6 +26,8 @@ import { loadKeeperDiveModel, type KeeperDiveModel } from './keeperDiveModel'
 const TIMINGS = { runup: 0.72, strike: 0.16, flight: 0.5, aftermath: 1.35 }
 /** Velocidade angular (rad/s) do vaivem da mira automatica — ciclo completo em ~5.2s. */
 const AUTO_AIM_SPEED = 1.2
+/** Estadio ficou mais rico visualmente; o goleiro em escala 1:1 parecia pequeno. */
+const KEEPER_SCALE = 1.13
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
@@ -62,6 +65,7 @@ export class PenaltyEngine3D {
   private ballMesh: Mesh
   private netMesh: NetMesh
   private fieldAtmosphere: FieldAtmosphere
+  private ambientSmoke: AmbientEffects
   private aimReticle: AimReticle
   private ballShadow: Mesh
   private kickerShadow: Mesh
@@ -115,11 +119,14 @@ export class PenaltyEngine3D {
     this.aimReticle = buildAimReticle(this.layout.ballRadius, this.layout.goalLineZ)
     this.scene.add(this.aimReticle.object3D)
 
-    // Brilho/particulas sutis sobre o gramado da foto — unico efeito
-    // ambiente que sobra em 3D, o resto (torcida/refletores/telao/fumaca)
-    // ja vem da imagem de fundo.
+    // Brilho/particulas douradas sutis sobre o gramado da foto — torcida/
+    // refletores/telao ja vem da imagem de fundo, so a fumaca atras do gol
+    // continua sendo 3D de verdade (precisa ficar atras dos personagens).
     this.fieldAtmosphere = buildFieldAtmosphere(this.layout)
     this.scene.add(this.fieldAtmosphere.object3D)
+
+    this.ambientSmoke = buildAmbientSmoke(this.layout)
+    this.scene.add(this.ambientSmoke.object3D)
 
     // Sombras falsas coladas no gramado (sem sombra dinamica no v1).
     this.ballShadow = buildBlobShadow(this.layout.ballRadius * 2.2)
@@ -136,6 +143,11 @@ export class PenaltyEngine3D {
 
     this.keeper = createCharacter('keeper')
     this.keeper.object3D.position.set(0, 0, this.layout.goalLineZ - 0.1)
+    // Estadio ficou mais rico visualmente e o goleiro em escala real
+    // (1:1 com o mundo) parecia pequeno diante dele — origem dos dois
+    // rigs (procedural e .glb) fica nos pes, entao escalar em torno da
+    // propria origem cresce so pra cima, sem tirar o pe do chao.
+    this.keeper.object3D.scale.setScalar(KEEPER_SCALE)
     this.scene.add(this.keeper.object3D)
 
     void this.loadDiveModelAsync()
@@ -156,6 +168,7 @@ export class PenaltyEngine3D {
     // clipe base do .glb); o procedural fica so como fallback de carga.
     this.scene.remove(this.keeper.object3D)
     this.keeperDiveModel.object3D.position.copy(this.keeper.object3D.position)
+    this.keeperDiveModel.object3D.scale.setScalar(KEEPER_SCALE)
     this.scene.add(this.keeperDiveModel.object3D)
     this.keeperDiveModel.playIdle()
     this.diveModelActive = true
@@ -291,6 +304,7 @@ export class PenaltyEngine3D {
     this.aimReticle.update(autoAiming ? { x: this.autoAimX, y: this.layout.keeperHeight } : null, true, now)
 
     this.fieldAtmosphere.update(now)
+    this.ambientSmoke.update(now)
     this.netMesh.update(this.ripples, now)
     this.ballMesh.position.set(this.ballPos.x, this.ballPos.y, this.ballPos.z)
 
