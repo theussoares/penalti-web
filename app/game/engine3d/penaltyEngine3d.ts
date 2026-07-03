@@ -13,6 +13,7 @@ import { createCharacter } from './character'
 import { buildBallMesh } from './ballMesh'
 import { arcHeight, ballFlightPosition } from './ballFlight'
 import { buildAdBoards } from './adBoardMesh'
+import { buildAimReticle, type AimReticle } from './aimReticle'
 import { buildCameraRig, type CameraRig } from './cameraRig'
 import { buildCrowdBillboard, type CrowdBillboard } from './crowdBillboard'
 import { buildGoalFrame } from './goalFrameMesh'
@@ -61,6 +62,7 @@ export class PenaltyEngine3D {
   private ballMesh: Mesh
   private netMesh: NetMesh
   private crowd: CrowdBillboard
+  private aimReticle: AimReticle
   private kicker: Character
   private keeper: Character
   private keeperDiveModel: KeeperDiveModel | null = null
@@ -106,6 +108,9 @@ export class PenaltyEngine3D {
 
     this.netMesh = buildNetMesh(this.layout)
     this.scene.add(this.netMesh.mesh)
+
+    this.aimReticle = buildAimReticle(this.layout.ballRadius, this.layout.goalLineZ)
+    this.scene.add(this.aimReticle.object3D)
 
     // Torcida como faixa de arquibancada acima das placas, atras do gol —
     // nao mais um telao preenchendo a tela inteira. Acima dela sobra o ceu
@@ -290,6 +295,13 @@ export class PenaltyEngine3D {
         this.kicker.update('idle', now, delta)
         this.keeper.update('idle', now, delta)
     }
+
+    const aiming = this.state === 'aiming' && this.hasAim
+    const b = this.layout.aimBounds
+    const aimInGoal =
+      this.aim.x > b.minX && this.aim.x < b.maxX &&
+      this.aim.y > b.minY && this.aim.y < b.maxY
+    this.aimReticle.update(aiming ? this.aim : null, aimInGoal, now)
 
     this.crowd.setExcitement(this.outcome === 'goal' && this.state !== 'ready' ? 1 : 0, now)
     this.netMesh.update(this.ripples, now)
