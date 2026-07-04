@@ -192,6 +192,10 @@ export class PenaltyEngine3D {
     this.scene.remove(this.kicker.object3D)
     this.kickerModel.object3D.position.copy(this.kicker.object3D.position)
     this.kickerModel.object3D.scale.setScalar(KICKER_SCALE)
+    // O .glb bruto olha para +Z (camera/torcida); o gol fica em -Z a partir
+    // da marca do penalti, entao precisa girar 180 graus para o batedor
+    // olhar para o gol como o procedural ja fazia.
+    this.kickerModel.object3D.rotation.y = Math.PI
     this.scene.add(this.kickerModel.object3D)
     this.kickerModel.playIdle()
     this.kickerModelActive = true
