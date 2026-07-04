@@ -95,10 +95,12 @@ export class PenaltyEngine3D {
     this.ballStart = { x: 0, y: this.layout.ballRadius, z: this.layout.spotZ }
     this.ballPos = { ...this.ballStart }
     this.autoAimX = this.layout.goalCenterX
-    // Aproximacao curta em diagonal: o suficiente para dar vida ao runup
-    // sem tirar o batedor do enquadramento (fov estreito) nem deixa-lo
-    // gigante na frente da camera.
-    this.kickerStartPos = { x: -1.7, z: this.layout.spotZ + 0.9 }
+    // Passo curto (nao mais uma corrida longa): o modelo real do batedor
+    // (kickerModel.ts) nao tem clipe de corrida, so idle e chute — o
+    // deslocamento e so de posicao, entao uma distancia grande "arrasta" o
+    // idle parado pelo gramado. Perto o bastante da bola para o passo
+    // passar despercebido.
+    this.kickerStartPos = { x: -0.85, z: this.layout.spotZ + 0.5 }
     this.kickerKickPos = { x: -0.35, z: this.layout.spotZ + 0.35 }
 
     // alpha:true + clear color transparente para o fundo estatico (foto de
