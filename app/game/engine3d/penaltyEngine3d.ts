@@ -3,6 +3,7 @@ import {
   Clock,
   DirectionalLight,
   Mesh,
+  type Object3D,
   Scene,
   WebGLRenderer
 } from 'three'
@@ -22,12 +23,15 @@ import { buildNetMesh, type NetMesh } from './netMesh'
 import type { Ripple } from './netRipple'
 import { computeWorldLayout, type WorldLayout } from './worldGeometry'
 import { loadKeeperDiveModel, type KeeperDiveModel } from './keeperDiveModel'
+import { loadKickerModel, type KickerModel } from './kickerModel'
 
 const TIMINGS = { runup: 0.72, strike: 0.16, flight: 0.5, aftermath: 1.35 }
 /** Velocidade angular (rad/s) do vaivem da mira automatica — ciclo completo em ~5.2s. */
 const AUTO_AIM_SPEED = 1.2
 /** Estadio ficou mais rico visualmente; o goleiro em escala 1:1 parecia pequeno. */
 const KEEPER_SCALE = 1.13
+/** Ajuste de escala do modelo real do batedor (calibrado visualmente). */
+const KICKER_SCALE = 0.024
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t
 
@@ -76,6 +80,11 @@ export class PenaltyEngine3D {
   private diveModelActive = false
   /** Clipe de mergulho ja disparado neste lance. */
   private divePlayed = false
+  private kickerModel: KickerModel | null = null
+  /** Modelo real do batedor presente na cena (substituiu o procedural). */
+  private kickerModelActive = false
+  /** Clipe de chute ja disparado neste lance. */
+  private kickPlayed = false
 
   private resizeObserver: ResizeObserver | null = null
 
@@ -151,6 +160,7 @@ export class PenaltyEngine3D {
     this.scene.add(this.keeper.object3D)
 
     void this.loadDiveModelAsync()
+    void this.loadKickerModelAsync()
 
     this.handleResize()
     this.resizeObserver = new ResizeObserver(() => this.handleResize())
@@ -174,6 +184,24 @@ export class PenaltyEngine3D {
     this.diveModelActive = true
   }
 
+  private async loadKickerModelAsync() {
+    this.kickerModel = await loadKickerModel()
+    if (!this.kickerModel || this.destroyed) return
+    // Mesmo padrao do goleiro: modelo real assume o batedor em todas as
+    // fases (idle/corrida/chute), procedural so como fallback de carga.
+    this.scene.remove(this.kicker.object3D)
+    this.kickerModel.object3D.position.copy(this.kicker.object3D.position)
+    this.kickerModel.object3D.scale.setScalar(KICKER_SCALE)
+    this.scene.add(this.kickerModel.object3D)
+    this.kickerModel.playIdle()
+    this.kickerModelActive = true
+  }
+
+  /** Object3D do batedor atualmente na cena — real (se carregado) ou procedural. */
+  private kickerObject(): Object3D {
+    return this.kickerModelActive ? this.kickerModel!.object3D : this.kicker.object3D
+  }
+
   destroy() {
     this.destroyed = true
     cancelAnimationFrame(this.raf)
@@ -185,10 +213,12 @@ export class PenaltyEngine3D {
     this.resultSent = false
     this.ripples = []
     this.ballPos = { ...this.ballStart }
-    this.kicker.object3D.position.set(this.kickerStartPos.x, 0, this.kickerStartPos.z)
+    this.kickerObject().position.set(this.kickerStartPos.x, 0, this.kickerStartPos.z)
     this.divePlayed = false
-    // Modelo real fica na cena; so volta do mergulho para o idle em loop.
+    this.kickPlayed = false
+    // Modelo real fica na cena; so volta do mergulho/chute para o idle em loop.
     if (this.diveModelActive) this.keeperDiveModel!.playIdle()
+    if (this.kickerModelActive) this.kickerModel!.playIdle()
     // Rearma a mira automatica (tambem reinicia o som ambiente, via
     // onStateChange('aiming') no componente Vue).
     this.setState('aiming')
@@ -243,8 +273,8 @@ export class PenaltyEngine3D {
     switch (this.state) {
       case 'runup': {
         const rt = Math.min(1, t / TIMINGS.runup)
-        this.kicker.update('runup', rt, delta)
-        this.kicker.object3D.position.set(
+        this.updateKickerIdle(now, delta, 'runup', rt)
+        this.kickerObject().position.set(
           this.kickerStartPos.x + (this.kickerKickPos.x - this.kickerStartPos.x) * rt,
           0,
           this.kickerStartPos.z + (this.kickerKickPos.z - this.kickerStartPos.z) * rt
@@ -254,7 +284,18 @@ export class PenaltyEngine3D {
         break
       }
       case 'strike':
-        this.kicker.update('kick', Math.min(1, t / TIMINGS.strike), delta)
+        if (this.kickerModelActive) {
+          if (!this.kickPlayed) {
+            this.kickPlayed = true
+            // Janela mais generosa que TIMINGS.strike sozinho — o clipe de
+            // chute continua tocando durante o inicio do voo da bola (ver
+            // case 'flight' abaixo), senao ficaria comprimido demais.
+            this.kickerModel!.playKick(TIMINGS.strike + TIMINGS.flight)
+          }
+          this.kickerModel!.update(delta)
+        } else {
+          this.kicker.update('kick', Math.min(1, t / TIMINGS.strike), delta)
+        }
         this.updateKeeperIdle(now, delta)
         if (t >= TIMINGS.strike) {
           this.cb.onKick?.()
@@ -276,6 +317,8 @@ export class PenaltyEngine3D {
         } else {
           this.keeper.update(divePhase, ft, delta)
         }
+        // Deixa o clipe de chute terminar de tocar (ver case 'strike' acima).
+        if (this.kickerModelActive) this.kickerModel!.update(delta)
 
         if (ft >= 1) this.onBallArrive(now)
         break
@@ -292,7 +335,7 @@ export class PenaltyEngine3D {
         }
         break
       default:
-        this.kicker.update('idle', now, delta)
+        this.updateKickerIdle(now, delta, 'idle', now)
         this.updateKeeperIdle(now, delta)
     }
 
@@ -313,8 +356,8 @@ export class PenaltyEngine3D {
     this.ballShadow.position.z = this.ballPos.z
     const shadowScale = 1 / (1 + this.ballPos.y * 0.7)
     this.ballShadow.scale.setScalar(shadowScale)
-    this.kickerShadow.position.x = this.kicker.object3D.position.x
-    this.kickerShadow.position.z = this.kicker.object3D.position.z
+    this.kickerShadow.position.x = this.kickerObject().position.x
+    this.kickerShadow.position.z = this.kickerObject().position.z
     this.cameraRig.update(this.state, t, this.ballPos)
   }
 
@@ -324,6 +367,19 @@ export class PenaltyEngine3D {
       this.keeperDiveModel!.update(delta)
     } else {
       this.keeper.update('idle', now, delta)
+    }
+  }
+
+  /**
+   * Batedor parado ou correndo: modelo real toca o clipe de idle em loop
+   * (nao ha clipe de corrida — o deslocamento e so de posicao, ver o
+   * `position.set` no case 'runup'), ou o procedural com a pose certa.
+   */
+  private updateKickerIdle(now: number, delta: number, proceduralPhase: 'idle' | 'runup', proceduralT: number) {
+    if (this.kickerModelActive) {
+      this.kickerModel!.update(delta)
+    } else {
+      this.kicker.update(proceduralPhase, proceduralT, delta)
     }
   }
 

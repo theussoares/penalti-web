@@ -185,13 +185,15 @@ onBeforeUnmount(() => {
     <div class="stage" :style="{ backgroundImage: `url(${bgImage})` }">
       <canvas ref="canvasRef" class="game-canvas" />
 
-      <!-- Telao central: usa o quadro ja pintado na foto de fundo -->
+      <!-- Telao central: usa o quadro ja pintado na foto de fundo. Historico
+           mora aqui agora (nao mais acima dos botoes). -->
       <div class="jumbotron" aria-hidden="true">
         <img
           class="jumbotron-logo"
           src="/images/penalti-premiado-logo.png"
           alt=""
         />
+        <HistoricoBar :history="history" />
       </div>
 
       <div class="chances-hud" aria-hidden="true">
@@ -247,8 +249,6 @@ onBeforeUnmount(() => {
           "
           class="hint"
         >
-          <HistoricoBar :history="history" />
-
           <button
             class="hint-badge shoot-btn"
             type="button"
@@ -371,13 +371,15 @@ onBeforeUnmount(() => {
   height: 14%;
   transform: translateX(-50%);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 6px;
 }
 
 .jumbotron-logo {
   width: 800px;
-  height: 100%;
+  height: 78%;
   object-fit: contain;
   filter: drop-shadow(0 0 10px rgba(255, 210, 63, 0.35));
 }
