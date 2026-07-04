@@ -1,11 +1,51 @@
 # Status do projeto — Penalti Premiado 3D
 
 > Nota de retomada. Última atualização: 2026-07-03 (sessão longa: motor 3D +
-> ambientação + fundo de imagem + mira automática + jogo profissionalizado).
-> Se você é uma sessão nova pegando este projeto, leia isto primeiro, depois
-> os planos/specs referenciados abaixo.
+> ambientação + fundo de imagem + mira automática + jogo profissionalizado +
+> modelo real do batedor). Se você é uma sessão nova pegando este projeto,
+> leia isto primeiro, depois os planos/specs referenciados abaixo.
 
-## Feito nesta rodada: jogo profissionalizado (sessão de chances, histórico, chutar tudo, replay, modais da Roleta)
+## Feito nesta rodada: modelo real do batedor + histórico no telão
+
+Sem spec/plano formal — trabalho direto de continuação, pendência já
+documentada abaixo (commit `d789ba7`):
+
+- **`jogador_final.glb`** (fornecido pelo usuário, com idle e chute,
+  11.6MB) comprimido para `public/models/kicker-run-kick.glb` (1.23MB)
+  via `gltf-transform optimize` (meshopt + webp); bruto movido para
+  `raw-assets/jogador-final.glb` (gitignorado, mesmo padrão do goleiro).
+  Loader novo em `app/game/engine3d/kickerModel.ts`, espelhando
+  `keeperDiveModel.ts`. **Detalhe importante**: o `.glb` só tem 2 clipes
+  (`mixamo.com` = idle, nome padrão que o Mixamo dá quando não
+  renomeado; `Kick` = chute) — **sem ciclo de corrida dedicado**. O idle
+  toca em loop também durante o `runup` (o deslocamento até a bola
+  sempre foi só posição, não animação). O clipe de chute usa uma janela
+  de tempo mais generosa (`TIMINGS.strike + TIMINGS.flight`, não só
+  `strike`) para não ficar comprimido a ~12x a velocidade. Escala
+  calibrada visualmente em `KICKER_SCALE = 0.024` — o `.glb` bruto usa
+  uma unidade de mundo ~40x maior que metros (bbox do bind pose tem
+  ~71 de altura). Mesmo padrão do goleiro: o modelo real assume TODAS
+  as fases assim que carrega; o procedural (`proceduralCharacter.ts`)
+  só aparece como fallback durante o carregamento assíncrono.
+- **Histórico movido para o telão**: `HistoricoBar` saiu de cima dos
+  botões de chute e passou a ficar dentro do `.jumbotron`, abaixo do
+  logo — pedido explícito do usuário ("mover", não duplicar).
+
+Verificado no navegador: idle/corrida/chute do novo modelo sem erros de
+console, goleiro real seguiu funcionando normalmente, histórico aparece
+no telão com o ícone certo por resultado (gol/defendeu/replay).
+`npm run test:unit`: 34/34.
+
+**Nota de ferramenta**: durante esta rodada, `preview_screenshot` e
+`preview_eval` travaram por ~1min logo após uma sequência de edições
+rápidas + reinício automático do Nuxt (Vite re-otimizando dependências
+ao descobrir `three` dinamicamente) — não era bug do app (zero erros no
+console, `document.title` respondia normal via eval). Resolvido
+parando e subindo o preview de novo (`preview_stop` + `preview_start`),
+que criou uma aba nova. Se acontecer de novo, tentar isso antes de
+assumir que é regressão de código.
+
+## Feito na rodada anterior: jogo profissionalizado (sessão de chances, histórico, chutar tudo, replay, modais da Roleta)
 
 **`docs/superpowers/specs/2026-07-03-jogo-profissionalizado-design.md`**
 (spec) + **`docs/superpowers/plans/2026-07-03-jogo-profissionalizado.md`**
@@ -73,7 +113,7 @@ mas não é mais usado) para Three.js/WebGL (`app/game/engine3d/`), orquestrado
 por `PenaltyEngine3D` (`app/game/engine3d/penaltyEngine3d.ts`), já ligado em
 `app/components/PenaltyGame.client.vue`.
 
-Cinco rodadas de trabalho até agora:
+Seis rodadas de trabalho até agora:
 
 1. **`docs/superpowers/specs/2026-07-03-motor-3d-threejs-design.md`** (spec) +
    **`docs/superpowers/plans/2026-07-03-motor-3d-threejs.md`** (plano, 16
@@ -102,7 +142,10 @@ Cinco rodadas de trabalho até agora:
    (spec) + **`docs/superpowers/plans/2026-07-03-jogo-profissionalizado.md`**
    (plano, 8 tasks) — sessão de chances finita, replay/"Chute Extra",
    contador de chances, barra de histórico, "Chutar tudo", modais reais
-   estruturados como os da Roleta (ver secção "Feito nesta rodada" acima).
+   estruturados como os da Roleta.
+6. **Sem plano formal** — modelo real do batedor (`jogador_final.glb`)
+   integrado, histórico movido para o telão (ver secção "Feito nesta
+   rodada" acima). Commit `d789ba7`.
 
 **As rodadas 1 e 2 foram executadas por duas sessões de Claude Code rodando
 em paralelo no mesmo repositório**, sem coordenação direta entre si. Isso
@@ -113,17 +156,21 @@ há uma sessão trabalhando no projeto agora.
 
 - **Câmera é estática** — sem dolly/shake dinâmico. O usuário pediu
   explicitamente para simplificar isso (ver commit `34012da`).
-- **Personagens (goleiro parado/batedor) são procedurais** (cápsulas
-  low-poly, `proceduralCharacter.ts`) — não existe pacote gratuito de
-  jogador+goleiro riggado com chute/mergulho pronto pra uso. **Atualização**:
-  o usuário adicionou um `jogador_final.glb` (modelo real do batedor, com
-  idle e chute) na raiz do repo, ainda **não commitado nem integrado** —
-  próximo passo natural, ver "Pendências conhecidas".
-- **Exceção**: o goleiro usa o modelo `.glb` real fornecido pelo usuário
-  (`public/models/goalkeeper-dive.glb`) para TODAS as fases agora (idle com
-  o clipe base em loop, e os 3 clipes de mergulho por direção) — o
-  procedural só aparece como fallback enquanto o `.glb` carrega
-  assíncronamente ou se falhar ao carregar.
+- **Personagens são procedurais só como fallback** (cápsulas low-poly,
+  `proceduralCharacter.ts`) — não existe pacote gratuito de
+  jogador+goleiro riggado com chute/mergulho pronto pra uso, então os
+  rigs procedurais existem apenas para cobrir a janela assíncrona antes
+  do `.glb` real carregar (ou se falhar ao carregar). **Os dois
+  personagens (goleiro e batedor) já usam modelo real para TODAS as
+  fases** — ver os dois itens abaixo.
+- O goleiro usa `public/models/goalkeeper-dive.glb` (idle com o clipe
+  base em loop, e os 3 clipes de mergulho por direção).
+- O batedor usa `public/models/kicker-run-kick.glb` (rodada 6): idle em
+  loop (`mixamo.com`) também durante a corrida (não há clipe de corrida
+  dedicado — o deslocamento até a bola sempre foi só posição) e `Kick`
+  no chute. Escala calibrada em `KICKER_SCALE = 0.024`
+  (`penaltyEngine3d.ts`) — o `.glb` bruto usa uma unidade de mundo ~40x
+  maior que metros, não mexer nesse valor sem entender o porquê.
 - **Sem sombras dinâmicas nem pós-processamento** — tudo sombra falsa
   (`blobShadow.ts`) e `MeshBasicMaterial`, alvo de performance é Android de
   entrada/médio.
@@ -144,12 +191,7 @@ há uma sessão trabalhando no projeto agora.
 
 ## Pendências conhecidas
 
-1. **Integrar `jogador_final.glb`** (modelo real do batedor com idle/chute,
-   adicionado pelo usuário na raiz do repo, ainda não commitado nem
-   referenciado em nenhum código) — próximo passo natural, mesmo padrão já
-   usado para o goleiro (`gltf-transform` para comprimir, loader dedicado,
-   substituir o `createCharacter('kicker')` procedural). Não decidido ainda
-   quando fazer isso.
+1. ~~Integrar `jogador_final.glb`~~ — **feito na rodada 6** (commit `d789ba7`).
 2. **Task 16 do plano `motor-3d-threejs.md`** (remover `app/game/engine.ts`,
    o motor 2D antigo) — ainda não foi feita. O arquivo continua no repo, sem
    uso. Fazer só depois de ter certeza que o motor 3D está estável.
@@ -208,7 +250,8 @@ há uma sessão trabalhando no projeto agora.
   `.superpowers/sdd/progress.md` (gitignored, local apenas) — tem o
   histórico completo das rodadas 1, 4 e 5; a rodada 2 (ambientação) foi
   tocada por outra sessão sem esse ledger.
-- Próximos passos sugeridos, nenhum decidido ainda: (a) integrar
-  `jogador_final.glb` (pendência 1); (b) trocar `USE_MOCK` por uma API real;
-  (c) Task 16 de `motor-3d-threejs.md` (remover o motor 2D morto); (d)
-  apagar os arquivos soltos de Roleta sem uso (pendência 5).
+- Próximos passos sugeridos, nenhum decidido ainda: (a) trocar `USE_MOCK`
+  por uma API real (pendência 9); (b) Task 16 de `motor-3d-threejs.md`
+  (remover o motor 2D morto, pendência 2); (c) apagar os arquivos soltos de
+  Roleta sem uso (pendência 5); (d) revisão final de branch do plano
+  `motor-3d-threejs.md`, rodada 1 (pendência 3).
