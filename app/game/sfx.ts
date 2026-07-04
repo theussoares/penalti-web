@@ -214,6 +214,22 @@ export class Sfx {
     void this.winAudio.play().catch(() => { /* ignora erro de autoplay */ })
   }
 
+  handleVisibility(hidden: boolean) {
+    if (hidden) {
+      if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend()
+      this.ambientAudio?.pause()
+      this.crowdAudio?.pause()
+      this.goalAudio?.pause()
+      this.winAudio?.pause()
+    } else {
+      if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume()
+      if (!this.muted) {
+        if (this.ambientAudio) void this.ambientAudio.play().catch(() => {})
+        if (this.crowdAudio) void this.crowdAudio.play().catch(() => {})
+      }
+    }
+  }
+
   destroy() {
     if (this.crowdFadeInterval) {
       clearInterval(this.crowdFadeInterval)

@@ -175,9 +175,14 @@ function toggleMute() {
   sfx.setMuted(muted.value);
 }
 
+function handleVisibilityChange() {
+  sfx.handleVisibility(document.hidden);
+}
+
 onMounted(async () => {
   updateLayoutMode();
   window.addEventListener("resize", updateLayoutMode);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
   game.value = (await fetchGames()).find((g) => g.active) ?? null;
 
@@ -202,6 +207,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", updateLayoutMode);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   engine?.destroy();
   sfx.destroy();
 });
