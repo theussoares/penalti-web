@@ -19,7 +19,7 @@ export default defineNuxtConfig({
           name: 'description',
           content: 'Bata o penalti, vença o goleiro e ganhe premios em dinheiro ou numeros da sorte.'
         },
-        { name: 'theme-color', content: '#04120a' }
+        { name: 'theme-color', content: '#00061b' }
       ],
       link: [
         {

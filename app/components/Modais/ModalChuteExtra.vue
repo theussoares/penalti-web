@@ -47,7 +47,7 @@ defineEmits<{ continuar: [] }>();
 }
 
 .badge-replay {
-  color: #04120a;
+  color: #00061b;
   background: radial-gradient(circle at 32% 28%, #a9d8ff, #6fb8ff 55%, #2f7fd1);
   box-shadow: 0 10px 30px rgba(111, 184, 255, 0.4);
 }

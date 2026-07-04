@@ -11,6 +11,8 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "canvas-confetti": "^1.9.4",
     "nuxt": "^4.0.0",
     "three": "^0.185.1",
     "vue": "^3.5.0",

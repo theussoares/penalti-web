@@ -1315,7 +1315,7 @@ export class PenaltyEngine {
 
   private kickerAnchor(): { pos: Vec; runP: number; kickP: number } {
     const L = this.layout
-    const start: Vec = { x: L.spot.x - L.W * 0.17, y: L.spot.y + L.H * 0.085 }
+    const start: Vec = { x: L.spot.x - L.ballR * 4.0, y: L.spot.y + L.ballR * 1.5 }
     const plant: Vec = { x: L.spot.x - L.ballR * 2.1, y: L.spot.y + L.ballR * 0.9 }
 
     if (this.state === 'runup') {
@@ -1417,14 +1417,12 @@ export class PenaltyEngine {
     ctx.fill()
 
     const running = this.state === 'runup'
-    const stepPhase = runP * Math.PI * 2 * 3.2
-    const legSwing = running ? Math.sin(stepPhase) : 0
     const idle = this.state === 'ready' || this.state === 'aiming'
     const breath = idle ? Math.sin(this.now * 1.8) * u * 0.05 : 0
-    const swing = kickP > 0 ? easeOutCubic(kickP) : 0
+    const swing = kickP > 0 ? easeOutCubic(kickP) : (running ? -easeInQuad(runP) : 0)
 
-    // Tronco inclina: leve na espera, para frente na corrida, chicote no chute
-    const lean = kickP > 0 ? lerp(0.1, -0.24, swing) : running ? 0.14 : 0.03
+    // Tronco inclina: leve na espera, preparo no runup, chicote no chute
+    const lean = kickP > 0 ? lerp(0.1, -0.24, swing) : running ? lerp(0.03, 0.1, runP) : 0.03
     ctx.rotate(lean)
 
     const hipL: Vec = { x: -u * 0.42, y: u * 0.95 }
@@ -1432,24 +1430,30 @@ export class PenaltyEngine {
     const thighLen = u * 1.28
     const shinLen = u * 1.22
 
-    // Tornozelos: quase na extensao total dos ossos para as pernas ficarem retas
-    let ankleL: Vec = { x: hipL.x - u * 0.14 + (running ? legSwing * u * 0.85 : 0), y: u * 3.42 }
-    let ankleR: Vec = { x: hipR.x + u * 0.14 - (running ? legSwing * u * 0.85 : 0), y: u * 3.42 }
+    // Tornozelos: passo e preparo para o chute
+    let ankleL: Vec = { x: hipL.x - u * 0.14, y: u * 3.42 }
+    let ankleR: Vec = { x: hipR.x + u * 0.14, y: u * 3.42 }
     if (running) {
-      // Levantar o pe que esta atras (corrida com calcanhar subindo)
-      ankleL.y -= Math.max(0, -legSwing) * u * 0.75
-      ankleR.y -= Math.max(0, legSwing) * u * 0.75
+      // Perna esquerda vai plantando pra frente no passo
+      ankleL.x -= runP * u * 1.0
+      ankleL.y -= Math.sin(runP * Math.PI) * u * 0.5
+    } else if (kickP > 0 || this.state === 'flight' || this.state === 'aftermath' || this.state === 'done') {
+      ankleL.x -= u * 1.0
     }
+
     let footAngR = 0
-    if (kickP > 0) {
-      const ang = lerp(Math.PI * 0.8, -Math.PI * 0.3, swing)
+    if (kickP > 0 || running) {
+      const ang = swing < 0 
+         ? lerp(Math.PI * 0.45, Math.PI * 0.8, -swing) 
+         : lerp(Math.PI * 0.8, -Math.PI * 0.3, swing)
       const reach = (thighLen + shinLen) * 0.92
       ankleR = {
         x: hipR.x + Math.cos(ang + Math.PI / 2) * reach * 0.88,
         y: hipR.y + Math.sin(ang + Math.PI / 2) * reach
       }
-      footAngR = lerp(0.9, -0.55, swing)
-      ankleL = { x: hipL.x - u * 0.3, y: u * 3.42 }
+      footAngR = swing < 0 
+         ? lerp(0.06, 0.9, -swing)
+         : lerp(0.9, -0.55, swing)
     }
 
     // Chuteira modelada: calcanhar, sola e bico
@@ -1496,8 +1500,8 @@ export class PenaltyEngine {
     }
 
     // As duas pernas ficam atras do calcao: o tecido cobre o topo das coxas
-    drawLeg(hipL, ankleL, -1, -1, running ? -legSwing * 0.3 : -0.06)
-    drawLeg(hipR, ankleR, kickP > 0 ? (swing < 0.4 ? 1 : -1) : 1, 1, kickP > 0 ? footAngR : running ? legSwing * 0.3 : 0.06)
+    drawLeg(hipL, ankleL, -1, -1, running ? -0.1 : -0.06)
+    drawLeg(hipR, ankleR, (kickP > 0 || running) ? (swing < 0.4 ? 1 : -1) : 1, 1, (kickP > 0 || running) ? footAngR : 0.06)
 
     // Calcao azul: pelvis com abertura das pernas e frisos
     const shortsGrad = ctx.createLinearGradient(-u, 0, u, 0)
@@ -1601,14 +1605,18 @@ export class PenaltyEngine {
 
     let handL: Vec
     let handR: Vec
-    if (running) {
-      // Bracos bombeando dobrados a 90 graus
-      handL = { x: -u * (0.9 + Math.cos(stepPhase + Math.PI) * 0.25), y: -u * 0.7 + Math.sin(stepPhase + Math.PI) * u * 0.85 }
-      handR = { x: u * (0.9 + Math.cos(stepPhase) * 0.25), y: -u * 0.7 + Math.sin(stepPhase) * u * 0.85 }
-    } else if (kickP > 0) {
-      // Braco esquerdo abre para cima equilibrando, direito vai para tras
-      handL = { x: lerp(-u * 1.1, -u * 1.85, swing), y: lerp(u * 0.1, -u * 1.5, swing) }
-      handR = { x: lerp(u * 1.1, u * 1.5, swing), y: lerp(u * 0.1, u * 0.75, swing) }
+    if (running || kickP > 0) {
+      // Bracos abrem equilibrando durante windup (swing < 0) e chute (swing > 0)
+      const p = swing < 0 ? -swing : 0
+      const k = swing > 0 ? swing : 0
+      handL = { 
+        x: lerp(lerp(-u * 1.02, -u * 1.1, p), -u * 1.85, k), 
+        y: lerp(lerp(u * 0.4, u * 0.1, p), -u * 1.5, k) 
+      }
+      handR = { 
+        x: lerp(lerp(u * 1.02, u * 1.1, p), u * 1.5, k), 
+        y: lerp(lerp(u * 0.4, u * 0.1, p), u * 0.75, k) 
+      }
     } else {
       // Bracos relaxados ao lado do corpo
       handL = { x: -u * 1.02, y: u * 0.4 + breath * 2 }

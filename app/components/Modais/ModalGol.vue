@@ -105,7 +105,7 @@ defineEmits<{ continuar: [] }>();
 }
 
 .badge-win {
-  color: #04120a;
+  color: #00061b;
   background: radial-gradient(circle at 32% 28%, #ffe789, #ffd23f 55%, #d99a12);
   box-shadow: 0 10px 30px rgba(255, 210, 63, 0.4);
 }

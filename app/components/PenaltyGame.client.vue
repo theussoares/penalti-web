@@ -16,6 +16,7 @@ import ModalDefendeu from "~/components/Modais/ModalDefendeu.vue";
 import ModalChuteExtra from "~/components/Modais/ModalChuteExtra.vue";
 import ModalChutarTudoConfirm from "~/components/Modais/ModalChutarTudoConfirm.vue";
 import ModalResumoChutarTudo from "~/components/Modais/ModalResumoChutarTudo.vue";
+import confetti from "canvas-confetti";
 
 const { fetchGames, fetchPlaySequence } = useGameApi();
 
@@ -76,6 +77,13 @@ const podeChutarTudo = computed(
     (engineState.value === "ready" || engineState.value === "aiming"),
 );
 
+const playHistory = computed(() => history.value);
+
+const jumboState = computed(() => {
+  if (modal.value === "none" || !currentPlayResult.value) return "idle";
+  return currentPlayResult.value.tipo_acao;
+});
+
 async function onShootClick() {
   if (!engine || awaitingSequence.value || modal.value !== "none") return;
   const gameId = game.value?.id ?? "penalty-premiado";
@@ -103,6 +111,18 @@ function onResult(outcome: ShotOutcome) {
   history.value.push(result);
   if (result.tipo_acao === "ganhou") {
     modal.value = "gol";
+    sfx.playWinModal();
+    sfx.stopGoalCrowd();
+    
+    // Dispara confetes vindo de tras do gol (centro-baixo da tela)
+    confetti({
+      particleCount: 120,
+      spread: 80,
+      origin: { y: 0.65, x: 0.5 },
+      colors: ["#ffd700", "#32ff64", "#ffffff"],
+      zIndex: 2000,
+      disableForReducedMotion: true
+    });
   } else if (result.tipo_acao === "replay") {
     modal.value = "chute-extra";
   } else {
@@ -169,7 +189,14 @@ onMounted(async () => {
       if (s === "aiming") sfx.startAmbient();
     },
     onKick: () => sfx.kick(),
-    onImpact: (outcome) => (outcome === "goal" ? sfx.roar() : sfx.groan()),
+    onImpact: (outcome) => {
+      if (outcome === "goal") {
+        sfx.roar();
+        sfx.playGoalCrowd();
+      } else {
+        sfx.groan();
+      }
+    },
   });
 });
 
@@ -185,23 +212,43 @@ onBeforeUnmount(() => {
     <div class="stage" :style="{ backgroundImage: `url(${bgImage})` }">
       <canvas ref="canvasRef" class="game-canvas" />
 
-      <!-- Telao central: usa o quadro ja pintado na foto de fundo. Historico
-           mora aqui agora (nao mais acima dos botoes). -->
-      <div class="jumbotron" aria-hidden="true">
+      <div class="logo-container" aria-hidden="true">
         <img
           class="jumbotron-logo"
           src="/images/penalti-premiado-logo.png"
           alt=""
         />
+        <div class="chances-hud" aria-hidden="true">
+          {{ chancesRestantesValue === 1 ? "Resta" : "Restam" }}:
+          {{ chancesRestantesValue }}
+          {{ chancesRestantesValue === 1 ? "Chance" : "Chances" }}
+        </div>
         <HistoricoBar :history="history" />
       </div>
 
-      <div class="chances-hud" aria-hidden="true">
-        {{ chancesRestantesValue }}
-        {{
-          chancesRestantesValue === 1 ? "chance restante" : "chances restantes"
-        }}
-      </div>
+      <!-- Telão em CSS puro -->
+      <!-- <div class="jumbotron-wrapper">
+        <Jumbotron :state="jumboState">
+          
+
+          <div
+            v-if="playHistory.length > 0"
+            class="prize-history-list"
+            aria-hidden="true"
+          >
+            <TransitionGroup name="list">
+              <span
+                v-for="(item, index) in playHistory"
+                :key="item.id || index"
+                class="prize-badge"
+                :class="`prize-${item.tipo_acao}`"
+              >
+                {{ item.nome }}
+              </span>
+            </TransitionGroup>
+          </div>
+        </Jumbotron>
+      </div> -->
 
       <!-- HUD -->
       <header class="hud">
@@ -237,7 +284,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
-        <button>Sair</button>
+        <!-- <button>Sair</button> -->
       </header>
 
       <!-- Botoes de chute -->
@@ -330,7 +377,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #04120a;
+  background: #010d32;
   overflow: hidden;
 }
 
@@ -342,7 +389,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: #04120a;
+  background-color: #00061b;
   background-size: cover;
   background-position: center;
   touch-action: none;
@@ -363,42 +410,106 @@ onBeforeUnmount(() => {
 
 /* ------------------------------ Telao ------------------------------ */
 
-.jumbotron {
+.logo-container {
   position: absolute;
   left: 50%;
-  top: 45px;
+  top: calc(25px + env(safe-area-inset-top));
   width: 100%;
-  height: 14%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 6px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.jumbotron-wrapper {
+  position: absolute;
+  left: 50%;
+  top: 18%;
+  transform: translateX(-50%);
+  width: 65%;
+  max-width: 400px;
+  z-index: 5;
 }
 
 .jumbotron-logo {
-  width: 800px;
-  height: 78%;
+  width: 40%;
+  max-width: 78%;
   object-fit: contain;
   filter: drop-shadow(0 0 10px rgba(255, 210, 63, 0.35));
 }
 
 .chances-hud {
-  position: absolute;
-  left: 50%;
-  top: 31%;
-  transform: translateX(-50%);
-  padding: 4px 14px;
+  padding: 6px 14px;
   border-radius: 999px;
-  background: rgba(6, 18, 12, 0.65);
+  background: rgba(6, 18, 12, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(6px);
   color: #fff;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 800;
   letter-spacing: 0.04em;
   white-space: nowrap;
+  margin-bottom: 8px;
+}
+
+.prize-history-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.prize-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(4px);
+  color: #fff;
+}
+
+.prize-ganhou {
+  background: rgba(255, 215, 0, 0.15);
+  border-color: rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+}
+
+.prize-nao_ganhou {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.prize-replay {
+  background: rgba(0, 191, 255, 0.15);
+  border-color: rgba(0, 191, 255, 0.4);
+  color: #00bfff;
+  text-shadow: 0 0 6px rgba(0, 191, 255, 0.5);
+}
+
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(10px) scale(0.85);
+}
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.85);
 }
 
 /* ------------------------------ HUD ------------------------------ */
@@ -454,13 +565,13 @@ onBeforeUnmount(() => {
 }
 
 .hint-badge {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #04120a;
+  color: #00061b;
   background: #8dff5a;
-  padding: 12px 34px;
+  padding: 10px 34px;
   border-radius: 999px;
   animation: hint-pulse 1.6s ease-in-out infinite;
 }
@@ -497,8 +608,8 @@ onBeforeUnmount(() => {
 
 .chutar-tudo-btn {
   pointer-events: auto;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: #8dff5a;

@@ -49,7 +49,7 @@ defineEmits<{ click: [] }>();
 
 .botao-primary {
   border: 0;
-  color: #04120a;
+  color: #00061b;
   background: linear-gradient(160deg, #ffe066, #ffd23f 55%, #eab308);
   box-shadow: 0 10px 26px rgba(255, 210, 63, 0.32);
 }

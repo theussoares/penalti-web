@@ -88,7 +88,7 @@ function tipoIcone(item: PenaltyPlayResult): "gol" | "defendeu" | "replay" {
 }
 
 .historico-gol {
-  color: #04120a;
+  color: #00061b;
   background: #8dff5a;
 }
 
@@ -98,7 +98,7 @@ function tipoIcone(item: PenaltyPlayResult): "gol" | "defendeu" | "replay" {
 }
 
 .historico-replay {
-  color: #04120a;
+  color: #00061b;
   background: #6fb8ff;
 }
 </style>

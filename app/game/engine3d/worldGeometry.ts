@@ -29,11 +29,11 @@ const KEEPER_HEIGHT = 1.3
 
 export function computeWorldLayout(): WorldLayout {
   const goalCenterX = 0
-  const goalLineZ = 0
+  const goalLineZ = -1
   return {
     goalWidth: GOAL_WIDTH,
     goalHeight: GOAL_HEIGHT,
-    goalPostRadius: 0.06,
+    goalPostRadius: 0.04,
     goalDepth: 1.1,
     goalCenterX,
     goalLineZ,

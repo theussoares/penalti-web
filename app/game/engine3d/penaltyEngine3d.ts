@@ -25,7 +25,10 @@ import { computeWorldLayout, type WorldLayout } from './worldGeometry'
 import { loadKeeperDiveModel, type KeeperDiveModel } from './keeperDiveModel'
 import { loadKickerModel, type KickerModel } from './kickerModel'
 
-const TIMINGS = { runup: 0.72, strike: 0.16, flight: 0.5, aftermath: 1.35 }
+// Define o timing da engine. Se quiser a bola saindo antes/depois, mude runup e strike.
+const TIMINGS = { runup: 0.25, strike: 0.56, flight: 0.4, aftermath: 1.35 }
+// Fixa a duracao da animacao do jogador para que a velocidade do corpo nao mude se voce alterar TIMINGS.
+const KICK_ANIMATION_DURATION = 1.37
 /** Velocidade angular (rad/s) do vaivem da mira automatica — ciclo completo em ~5.2s. */
 const AUTO_AIM_SPEED = 1.2
 /** Estadio ficou mais rico visualmente; o goleiro em escala 1:1 parecia pequeno. */
@@ -100,8 +103,8 @@ export class PenaltyEngine3D {
     // deslocamento e so de posicao, entao uma distancia grande "arrasta" o
     // idle parado pelo gramado. Perto o bastante da bola para o passo
     // passar despercebido.
-    this.kickerStartPos = { x: -0.85, z: this.layout.spotZ + 0.5 }
-    this.kickerKickPos = { x: -0.35, z: this.layout.spotZ + 0.35 }
+    this.kickerStartPos = { x: -1.2, z: this.layout.spotZ + 1.85 }
+    this.kickerKickPos = { x: -0.95, z: this.layout.spotZ + 2.45 }
 
     // alpha:true + clear color transparente para o fundo estatico (foto de
     // estadio gerada por IA, ver PenaltyGame.client.vue) aparecer por tras
@@ -279,7 +282,19 @@ export class PenaltyEngine3D {
     switch (this.state) {
       case 'runup': {
         const rt = Math.min(1, t / TIMINGS.runup)
-        this.updateKickerIdle(now, delta, 'runup', rt)
+
+        if (this.kickerModelActive) {
+          if (!this.kickPlayed) {
+            this.kickPlayed = true
+            // Inicia o clipe de chute desde o inicio da aproximacao (runup)
+            // A duracao e fixa para que mexer no timing da bola nao acelere/desacelere o corpo
+            this.kickerModel!.playKick(KICK_ANIMATION_DURATION)
+          }
+          this.kickerModel!.update(delta)
+        } else {
+          this.updateKickerIdle(now, delta, 'runup', rt)
+        }
+
         this.kickerObject().position.set(
           this.kickerStartPos.x + (this.kickerKickPos.x - this.kickerStartPos.x) * rt,
           0,
@@ -291,13 +306,7 @@ export class PenaltyEngine3D {
       }
       case 'strike':
         if (this.kickerModelActive) {
-          if (!this.kickPlayed) {
-            this.kickPlayed = true
-            // Janela mais generosa que TIMINGS.strike sozinho — o clipe de
-            // chute continua tocando durante o inicio do voo da bola (ver
-            // case 'flight' abaixo), senao ficaria comprimido demais.
-            this.kickerModel!.playKick(TIMINGS.strike + TIMINGS.flight)
-          }
+          // Clipe de chute continua tocando, ja foi iniciado no 'runup'
           this.kickerModel!.update(delta)
         } else {
           this.kicker.update('kick', Math.min(1, t / TIMINGS.strike), delta)
@@ -331,6 +340,7 @@ export class PenaltyEngine3D {
       }
       case 'aftermath':
         if (this.diveModelActive) this.keeperDiveModel!.update(delta)
+        if (this.kickerModelActive) this.kickerModel!.update(delta)
         this.updateBallAftermath(delta)
         if (t >= TIMINGS.aftermath) {
           if (!this.resultSent) {
@@ -341,6 +351,13 @@ export class PenaltyEngine3D {
         }
         break
       default:
+        // Assim que a animacao terminar o aftermath (chegar no state 'done'), 
+        // eles retornam suavemente para o idle
+        if (this.state === 'done') {
+          if (this.kickerModelActive) this.kickerModel!.playIdle()
+          if (this.diveModelActive) this.keeperDiveModel!.playIdle()
+        }
+
         this.updateKickerIdle(now, delta, 'idle', now)
         this.updateKeeperIdle(now, delta)
     }

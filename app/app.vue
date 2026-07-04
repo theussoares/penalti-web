@@ -17,8 +17,8 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #04120a;
-  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  background: #00061b;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 </style>

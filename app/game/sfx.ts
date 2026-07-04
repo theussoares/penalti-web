@@ -6,7 +6,11 @@
 export class Sfx {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
-  private ambient: { gain: GainNode; src: AudioBufferSourceNode } | null = null
+  private ambientAudio: HTMLAudioElement | null = null
+  private crowdAudio: HTMLAudioElement | null = null
+  private goalAudio: HTMLAudioElement | null = null
+  private winAudio: HTMLAudioElement | null = null
+  private crowdFadeInterval: number | null = null
   muted = false
 
   private ensure(): AudioContext | null {
@@ -28,6 +32,15 @@ export class Sfx {
     if (this.master && this.ctx) {
       this.master.gain.linearRampToValueAtTime(m ? 0 : 0.8, this.ctx.currentTime + 0.15)
     }
+    if (this.winAudio) {
+      this.winAudio.muted = m
+    }
+    if (this.ambientAudio) {
+      this.ambientAudio.muted = m
+    }
+    if (this.crowdAudio) {
+      this.crowdAudio.muted = m
+    }
   }
 
   private noiseBuffer(seconds: number): AudioBuffer {
@@ -38,23 +51,65 @@ export class Sfx {
     return buf
   }
 
-  /** Murmurinho continuo da torcida. */
+  /** Murmurinho continuo da torcida (arquivo mp3 real). */
   startAmbient() {
-    const ctx = this.ensure()
-    if (!ctx || !this.master || this.ambient) return
-    const src = ctx.createBufferSource()
-    src.buffer = this.noiseBuffer(2.5)
-    src.loop = true
-    const filter = ctx.createBiquadFilter()
-    filter.type = 'bandpass'
-    filter.frequency.value = 480
-    filter.Q.value = 0.35
-    const gain = ctx.createGain()
-    gain.gain.value = 0
-    src.connect(filter).connect(gain).connect(this.master)
-    src.start()
-    gain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 1.2)
-    this.ambient = { gain, src }
+    if (typeof window === 'undefined') return
+    if (!this.ambientAudio) {
+      this.ambientAudio = new Audio('/ambient.mp3')
+      this.ambientAudio.loop = true
+      this.ambientAudio.volume = 0.04 // Mantido volume original
+    }
+    if (!this.crowdAudio) {
+      this.crowdAudio = new Audio('/crowd.mp3')
+      this.crowdAudio.loop = true
+      this.crowdAudio.volume = 0.04 // som de fundo de estádio lotado
+    }
+
+    this.ambientAudio.muted = this.muted
+    this.crowdAudio.muted = this.muted
+
+    void this.ambientAudio.play().catch(() => { /* ignora erro de autoplay */ })
+    void this.crowdAudio.play().catch(() => { /* ignora erro de autoplay */ })
+  }
+
+  playGoalCrowd() {
+    if (typeof window === 'undefined') return
+    if (!this.goalAudio) {
+      this.goalAudio = new Audio('/goal.mp3')
+    }
+    if (this.crowdFadeInterval) {
+      clearInterval(this.crowdFadeInterval)
+      this.crowdFadeInterval = null
+    }
+    this.goalAudio.muted = this.muted
+    this.goalAudio.volume = 0.01
+    this.goalAudio.currentTime = 1
+    void this.goalAudio.play().catch(() => { })
+  }
+
+  stopGoalCrowd() {
+    if (!this.goalAudio) return
+    const fadeSteps = 20
+    const stepTime = 1000 / fadeSteps
+    const startVolume = this.goalAudio.volume
+    const volumeStep = startVolume / fadeSteps
+    let currentStep = 0
+
+    if (this.crowdFadeInterval) clearInterval(this.crowdFadeInterval)
+
+    this.crowdFadeInterval = window.setInterval(() => {
+      currentStep++
+      if (currentStep >= fadeSteps || !this.goalAudio) {
+        if (this.goalAudio) {
+          this.goalAudio.pause()
+          this.goalAudio.volume = 0.1
+        }
+        if (this.crowdFadeInterval) clearInterval(this.crowdFadeInterval)
+        this.crowdFadeInterval = null
+      } else {
+        this.goalAudio.volume = Math.max(0, startVolume - (volumeStep * currentStep))
+      }
+    }, stepTime)
   }
 
   whistle() {
@@ -149,9 +204,37 @@ export class Sfx {
     noise.start(t)
   }
 
+  playWinModal() {
+    if (typeof window === 'undefined') return
+    if (!this.winAudio) {
+      this.winAudio = new Audio('https://fpp-assets.play55.com.br/bpp/play55/roleta-v2/abrir-modal-ganhou.mp3')
+    }
+    this.winAudio.muted = this.muted
+    this.winAudio.currentTime = 0
+    void this.winAudio.play().catch(() => { /* ignora erro de autoplay */ })
+  }
+
   destroy() {
-    this.ambient?.src.stop()
-    this.ambient = null
+    if (this.crowdFadeInterval) {
+      clearInterval(this.crowdFadeInterval)
+      this.crowdFadeInterval = null
+    }
+    if (this.ambientAudio) {
+      this.ambientAudio.pause()
+      this.ambientAudio.src = ''
+    }
+    if (this.crowdAudio) {
+      this.crowdAudio.pause()
+      this.crowdAudio.src = ''
+    }
+    if (this.goalAudio) {
+      this.goalAudio.pause()
+      this.goalAudio.src = ''
+    }
+    this.ambientAudio = null
+    this.crowdAudio = null
+    this.goalAudio = null
+
     void this.ctx?.close()
     this.ctx = null
     this.master = null

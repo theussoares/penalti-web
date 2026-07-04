@@ -57,11 +57,17 @@ export async function loadKickerModel(): Promise<KickerModel | null> {
 
   let currentAction: AnimationAction | null = null
 
-  function playClip(action: AnimationAction | undefined, timeScale: number) {
+  function playClip(action: AnimationAction | undefined, timeScale: number, fadeDuration = 0.4) {
     if (!action || action === currentAction) return
-    currentAction?.stop()
+    const prev = currentAction
+    // currentAction?.stop()
     action.timeScale = timeScale
     action.reset().play()
+
+    if (prev) {
+      action.crossFadeFrom(prev, fadeDuration, true)
+    }
+
     currentAction = action
   }
 
@@ -73,7 +79,7 @@ export async function loadKickerModel(): Promise<KickerModel | null> {
     playKick(targetDurationSeconds) {
       const action = actionsByClipName.get(KICK_CLIP_NAME)
       if (!action) return
-      playClip(action, action.getClip().duration / targetDurationSeconds)
+      playClip(action, (action.getClip().duration) / targetDurationSeconds)
     },
     update(deltaSeconds) {
       mixer.update(deltaSeconds)

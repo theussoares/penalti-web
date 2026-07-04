@@ -23,12 +23,14 @@
 ## Task 1: Contrato de dados com replay, geração de mock e cenários fixos
 
 **Files:**
+
 - Modify: `app/composables/useGameApi.ts`
 - Modify: `app/composables/useGameApi.spec.ts`
 - Create: `app/mocks/penaltySequences.ts`
 - Create: `app/mocks/penaltySequences.spec.ts`
 
 **Interfaces:**
+
 - Produces: `PenaltyPlayResult` (com `tipo_acao`/`tipo_premio` incluindo `'replay'`), `MOCK_SESSION_SIZE: number`, `pickScenario(cenarioKey: string | null, scenarios?: Record<string, PenaltyPlayResult[]>): PenaltyPlayResult[] | null`, `PENALTY_SCENARIOS: Record<string, PenaltyPlayResult[]>`.
 
 - [ ] **Step 1: Criar os cenários fixos de teste**
@@ -36,7 +38,7 @@
 Crie `app/mocks/penaltySequences.ts`:
 
 ```ts
-import type { PenaltyPlayResult } from '../composables/useGameApi'
+import type { PenaltyPlayResult } from "../composables/useGameApi";
 
 /**
  * Cenarios fixos para testar fluxos de UI sem depender do gerador aleatorio
@@ -45,55 +47,300 @@ import type { PenaltyPlayResult } from '../composables/useGameApi'
  */
 export const PENALTY_SCENARIOS: Record<string, PenaltyPlayResult[]> = {
   todas_derrotas: [
-    { id: 1, chave_giro: 'cenario_derrota_1', tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Nao foi dessa vez', valor: null },
-    { id: 2, chave_giro: 'cenario_derrota_2', tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Tente amanha', valor: null },
-    { id: 3, chave_giro: 'cenario_derrota_3', tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Melhor sorte na proxima', valor: null },
-    { id: 4, chave_giro: 'cenario_derrota_4', tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Nao ganhou', valor: null },
-    { id: 5, chave_giro: 'cenario_derrota_5', tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Sem premio', valor: null }
+    {
+      id: 1,
+      chave_giro: "cenario_derrota_1",
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Nao foi dessa vez",
+      valor: null,
+    },
+    {
+      id: 2,
+      chave_giro: "cenario_derrota_2",
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Tente amanha",
+      valor: null,
+    },
+    {
+      id: 3,
+      chave_giro: "cenario_derrota_3",
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Melhor sorte na proxima",
+      valor: null,
+    },
+    {
+      id: 4,
+      chave_giro: "cenario_derrota_4",
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Nao ganhou",
+      valor: null,
+    },
+    {
+      id: 5,
+      chave_giro: "cenario_derrota_5",
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Sem premio",
+      valor: null,
+    },
   ],
   todos_ganhos_valor: [
-    { id: 1, chave_giro: 'cenario_valor_1', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 5,00', valor: '5' },
-    { id: 2, chave_giro: 'cenario_valor_2', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 10,00', valor: '10' },
-    { id: 3, chave_giro: 'cenario_valor_3', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 25,00', valor: '25' },
-    { id: 4, chave_giro: 'cenario_valor_4', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 50,00', valor: '50' },
-    { id: 5, chave_giro: 'cenario_valor_5', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 100,00', valor: '100' }
+    {
+      id: 1,
+      chave_giro: "cenario_valor_1",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 5,00",
+      valor: "5",
+    },
+    {
+      id: 2,
+      chave_giro: "cenario_valor_2",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 10,00",
+      valor: "10",
+    },
+    {
+      id: 3,
+      chave_giro: "cenario_valor_3",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 25,00",
+      valor: "25",
+    },
+    {
+      id: 4,
+      chave_giro: "cenario_valor_4",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 50,00",
+      valor: "50",
+    },
+    {
+      id: 5,
+      chave_giro: "cenario_valor_5",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 100,00",
+      valor: "100",
+    },
   ],
   todos_ganhos_cota: [
-    { id: 1, chave_giro: 'cenario_cota_1', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '1 Cota', valor: '1' },
-    { id: 2, chave_giro: 'cenario_cota_2', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '3 Cotas', valor: '3' },
-    { id: 3, chave_giro: 'cenario_cota_3', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '5 Cotas', valor: '5' },
-    { id: 4, chave_giro: 'cenario_cota_4', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '10 Cotas', valor: '10' },
-    { id: 5, chave_giro: 'cenario_cota_5', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '2 Cotas', valor: '2' }
+    {
+      id: 1,
+      chave_giro: "cenario_cota_1",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "1 Cota",
+      valor: "1",
+    },
+    {
+      id: 2,
+      chave_giro: "cenario_cota_2",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "3 Cotas",
+      valor: "3",
+    },
+    {
+      id: 3,
+      chave_giro: "cenario_cota_3",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "5 Cotas",
+      valor: "5",
+    },
+    {
+      id: 4,
+      chave_giro: "cenario_cota_4",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "10 Cotas",
+      valor: "10",
+    },
+    {
+      id: 5,
+      chave_giro: "cenario_cota_5",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "2 Cotas",
+      valor: "2",
+    },
   ],
   todos_replays: [
-    { id: 1, chave_giro: 'cenario_replay_1', tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Chute Extra!', valor: null },
-    { id: 2, chave_giro: 'cenario_replay_2', tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Mais uma cobranca!', valor: null },
-    { id: 3, chave_giro: 'cenario_replay_3', tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Continue chutando!', valor: null },
-    { id: 4, chave_giro: 'cenario_replay_4', tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Sorte sua!', valor: null },
-    { id: 5, chave_giro: 'cenario_replay_5', tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Ultimo chute extra', valor: null }
+    {
+      id: 1,
+      chave_giro: "cenario_replay_1",
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Chute Extra!",
+      valor: null,
+    },
+    {
+      id: 2,
+      chave_giro: "cenario_replay_2",
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Mais uma cobranca!",
+      valor: null,
+    },
+    {
+      id: 3,
+      chave_giro: "cenario_replay_3",
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Continue chutando!",
+      valor: null,
+    },
+    {
+      id: 4,
+      chave_giro: "cenario_replay_4",
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Sorte sua!",
+      valor: null,
+    },
+    {
+      id: 5,
+      chave_giro: "cenario_replay_5",
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Ultimo chute extra",
+      valor: null,
+    },
   ],
   alternado: [
-    { id: 1, chave_giro: 'cenario_alt_1', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 50,00', valor: '50' },
-    { id: 2, chave_giro: 'cenario_alt_2', tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Nao foi dessa vez', valor: null },
-    { id: 3, chave_giro: 'cenario_alt_3', tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Chute Extra!', valor: null },
-    { id: 4, chave_giro: 'cenario_alt_4', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '5 Cotas', valor: '5' },
-    { id: 5, chave_giro: 'cenario_alt_5', tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Tente amanha', valor: null }
+    {
+      id: 1,
+      chave_giro: "cenario_alt_1",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 50,00",
+      valor: "50",
+    },
+    {
+      id: 2,
+      chave_giro: "cenario_alt_2",
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Nao foi dessa vez",
+      valor: null,
+    },
+    {
+      id: 3,
+      chave_giro: "cenario_alt_3",
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Chute Extra!",
+      valor: null,
+    },
+    {
+      id: 4,
+      chave_giro: "cenario_alt_4",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "5 Cotas",
+      valor: "5",
+    },
+    {
+      id: 5,
+      chave_giro: "cenario_alt_5",
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Tente amanha",
+      valor: null,
+    },
   ],
   valores_altos: [
-    { id: 1, chave_giro: 'cenario_alto_1', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 500,00', valor: '500' },
-    { id: 2, chave_giro: 'cenario_alto_2', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 1.000,00', valor: '1000' },
-    { id: 3, chave_giro: 'cenario_alto_3', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '50 Cotas Premium', valor: '50' },
-    { id: 4, chave_giro: 'cenario_alto_4', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 2.500,00', valor: '2500' },
-    { id: 5, chave_giro: 'cenario_alto_5', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '100 Cotas', valor: '100' }
+    {
+      id: 1,
+      chave_giro: "cenario_alto_1",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 500,00",
+      valor: "500",
+    },
+    {
+      id: 2,
+      chave_giro: "cenario_alto_2",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 1.000,00",
+      valor: "1000",
+    },
+    {
+      id: 3,
+      chave_giro: "cenario_alto_3",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "50 Cotas Premium",
+      valor: "50",
+    },
+    {
+      id: 4,
+      chave_giro: "cenario_alto_4",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 2.500,00",
+      valor: "2500",
+    },
+    {
+      id: 5,
+      chave_giro: "cenario_alto_5",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "100 Cotas",
+      valor: "100",
+    },
   ],
   replay_depois_ganho: [
-    { id: 1, chave_giro: 'cenario_rg_1', tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Chute Extra!', valor: null },
-    { id: 2, chave_giro: 'cenario_rg_2', tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 75,00', valor: '75' },
-    { id: 3, chave_giro: 'cenario_rg_3', tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Mais um chute!', valor: null },
-    { id: 4, chave_giro: 'cenario_rg_4', tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '7 Cotas', valor: '7' },
-    { id: 5, chave_giro: 'cenario_rg_5', tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Fim das cobrancas', valor: null }
-  ]
-}
+    {
+      id: 1,
+      chave_giro: "cenario_rg_1",
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Chute Extra!",
+      valor: null,
+    },
+    {
+      id: 2,
+      chave_giro: "cenario_rg_2",
+      tipo_acao: "ganhou",
+      tipo_premio: "valor",
+      nome: "R$ 75,00",
+      valor: "75",
+    },
+    {
+      id: 3,
+      chave_giro: "cenario_rg_3",
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Mais um chute!",
+      valor: null,
+    },
+    {
+      id: 4,
+      chave_giro: "cenario_rg_4",
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome: "7 Cotas",
+      valor: "7",
+    },
+    {
+      id: 5,
+      chave_giro: "cenario_rg_5",
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Fim das cobrancas",
+      valor: null,
+    },
+  ],
+};
 ```
 
 - [ ] **Step 2: Testar o formato dos cenários**
@@ -101,49 +348,53 @@ export const PENALTY_SCENARIOS: Record<string, PenaltyPlayResult[]> = {
 Crie `app/mocks/penaltySequences.spec.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import { PENALTY_SCENARIOS } from './penaltySequences'
+import { describe, expect, it } from "vitest";
+import { PENALTY_SCENARIOS } from "./penaltySequences";
 
-describe('PENALTY_SCENARIOS', () => {
-  const chaves = Object.keys(PENALTY_SCENARIOS)
+describe("PENALTY_SCENARIOS", () => {
+  const chaves = Object.keys(PENALTY_SCENARIOS);
 
-  it('tem os cenarios esperados', () => {
+  it("tem os cenarios esperados", () => {
     expect(chaves).toEqual(
       expect.arrayContaining([
-        'todas_derrotas',
-        'todos_ganhos_valor',
-        'todos_ganhos_cota',
-        'todos_replays',
-        'alternado',
-        'valores_altos',
-        'replay_depois_ganho'
-      ])
-    )
-  })
+        "todas_derrotas",
+        "todos_ganhos_valor",
+        "todos_ganhos_cota",
+        "todos_replays",
+        "alternado",
+        "valores_altos",
+        "replay_depois_ganho",
+      ]),
+    );
+  });
 
-  it('cada cenario tem itens no formato PenaltyPlayResult', () => {
+  it("cada cenario tem itens no formato PenaltyPlayResult", () => {
     for (const chave of chaves) {
-      const cenario = PENALTY_SCENARIOS[chave]!
-      expect(cenario.length).toBeGreaterThan(0)
+      const cenario = PENALTY_SCENARIOS[chave]!;
+      expect(cenario.length).toBeGreaterThan(0);
       for (const item of cenario) {
-        expect(typeof item.id).toBe('number')
-        expect(typeof item.chave_giro).toBe('string')
-        expect(['ganhou', 'nao_ganhou', 'replay']).toContain(item.tipo_acao)
-        expect(['valor', 'cota', 'nao_ganhou', 'replay']).toContain(item.tipo_premio)
-        expect(typeof item.nome).toBe('string')
-        expect(item.valor === null || typeof item.valor === 'string').toBe(true)
+        expect(typeof item.id).toBe("number");
+        expect(typeof item.chave_giro).toBe("string");
+        expect(["ganhou", "nao_ganhou", "replay"]).toContain(item.tipo_acao);
+        expect(["valor", "cota", "nao_ganhou", "replay"]).toContain(
+          item.tipo_premio,
+        );
+        expect(typeof item.nome).toBe("string");
+        expect(item.valor === null || typeof item.valor === "string").toBe(
+          true,
+        );
       }
     }
-  })
+  });
 
-  it('cada chave_giro e unica dentro do proprio cenario', () => {
+  it("cada chave_giro e unica dentro do proprio cenario", () => {
     for (const chave of chaves) {
-      const cenario = PENALTY_SCENARIOS[chave]!
-      const chavesGiro = cenario.map((item) => item.chave_giro)
-      expect(new Set(chavesGiro).size).toBe(chavesGiro.length)
+      const cenario = PENALTY_SCENARIOS[chave]!;
+      const chavesGiro = cenario.map((item) => item.chave_giro);
+      expect(new Set(chavesGiro).size).toBe(chavesGiro.length);
     }
-  })
-})
+  });
+});
 ```
 
 - [ ] **Step 3: Rodar os testes novos e confirmar que passam**
@@ -187,65 +438,99 @@ Substitua o conteúdo completo de `app/composables/useGameApi.ts`:
  * efeito quando USE_MOCK esta ativo.
  */
 
-import { PENALTY_SCENARIOS } from '../mocks/penaltySequences'
+import { PENALTY_SCENARIOS } from "../mocks/penaltySequences";
 
 export interface GameInfo {
-  id: string
-  name: string
-  description: string
+  id: string;
+  name: string;
+  description: string;
   /** Chamada exibida no topo do jogo, ex: "Valendo R$ 500" */
-  headline: string
-  active: boolean
+  headline: string;
+  active: boolean;
 }
 
 export interface PenaltyPlayResult {
-  id: number
+  id: number;
   /** Identificador unico da jogada, mesmo padrao dos mocks de Roleta. */
-  chave_giro: string
-  tipo_acao: 'ganhou' | 'nao_ganhou' | 'replay'
-  tipo_premio: 'valor' | 'cota' | 'nao_ganhou' | 'replay'
+  chave_giro: string;
+  tipo_acao: "ganhou" | "nao_ganhou" | "replay";
+  tipo_premio: "valor" | "cota" | "nao_ganhou" | "replay";
   /** Texto de exibicao, ex: "R$ 50,00" ou "5 Cotas". */
-  nome: string
-  valor: string | null
+  nome: string;
+  valor: string | null;
 }
 
-const USE_MOCK = true
+const USE_MOCK = true;
 
 /** Tamanho da sequencia buscada no primeiro "Chutar" da sessao (mock). */
-export const MOCK_SESSION_SIZE = 5
+export const MOCK_SESSION_SIZE = 5;
 
 const MOCK_GAMES: GameInfo[] = [
   {
-    id: 'penalty-premiado',
-    name: 'Penalti Premiado',
-    description: 'Venca o goleiro e ganhe na hora.',
-    headline: 'Valendo premios em dinheiro e cotas',
-    active: true
-  }
-]
+    id: "penalty-premiado",
+    name: "Penalti Premiado",
+    description: "Venca o goleiro e ganhe na hora.",
+    headline: "Valendo premios em dinheiro e cotas",
+    active: true,
+  },
+];
 
-const REPLAY_CHANCE = 0.1
-const WIN_CHANCE = 0.35
-const MONEY_PRIZES = ['R$ 5,00', 'R$ 10,00', 'R$ 25,00', 'R$ 50,00', 'R$ 100,00']
-const COTA_PRIZES = ['1 Cota', '3 Cotas', '5 Cotas', '10 Cotas']
+const REPLAY_CHANCE = 0.1;
+const WIN_CHANCE = 0.35;
+const MONEY_PRIZES = [
+  "R$ 5,00",
+  "R$ 10,00",
+  "R$ 25,00",
+  "R$ 50,00",
+  "R$ 100,00",
+];
+const COTA_PRIZES = ["1 Cota", "3 Cotas", "5 Cotas", "10 Cotas"];
 
-let mockIdCounter = 0
+let mockIdCounter = 0;
 
 function mockPlayResult(): PenaltyPlayResult {
-  const id = ++mockIdCounter
-  const chave_giro = `penalti_${id}`
+  const id = ++mockIdCounter;
+  const chave_giro = `penalti_${id}`;
   if (Math.random() < REPLAY_CHANCE) {
-    return { id, chave_giro, tipo_acao: 'replay', tipo_premio: 'replay', nome: 'Chute Extra!', valor: null }
+    return {
+      id,
+      chave_giro,
+      tipo_acao: "replay",
+      tipo_premio: "replay",
+      nome: "Chute Extra!",
+      valor: null,
+    };
   }
   if (Math.random() >= WIN_CHANCE) {
-    return { id, chave_giro, tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou', nome: 'Nao foi dessa vez', valor: null }
+    return {
+      id,
+      chave_giro,
+      tipo_acao: "nao_ganhou",
+      tipo_premio: "nao_ganhou",
+      nome: "Nao foi dessa vez",
+      valor: null,
+    };
   }
   if (Math.random() < 0.4) {
-    const nome = COTA_PRIZES[Math.floor(Math.random() * COTA_PRIZES.length)]!
-    return { id, chave_giro, tipo_acao: 'ganhou', tipo_premio: 'cota', nome, valor: nome.split(' ')[0]! }
+    const nome = COTA_PRIZES[Math.floor(Math.random() * COTA_PRIZES.length)]!;
+    return {
+      id,
+      chave_giro,
+      tipo_acao: "ganhou",
+      tipo_premio: "cota",
+      nome,
+      valor: nome.split(" ")[0]!,
+    };
   }
-  const nome = MONEY_PRIZES[Math.floor(Math.random() * MONEY_PRIZES.length)]!
-  return { id, chave_giro, tipo_acao: 'ganhou', tipo_premio: 'valor', nome, valor: nome.replace(/[^\d,]/g, '') }
+  const nome = MONEY_PRIZES[Math.floor(Math.random() * MONEY_PRIZES.length)]!;
+  return {
+    id,
+    chave_giro,
+    tipo_acao: "ganhou",
+    tipo_premio: "valor",
+    nome,
+    valor: nome.replace(/[^\d,]/g, ""),
+  };
 }
 
 /**
@@ -255,48 +540,56 @@ function mockPlayResult(): PenaltyPlayResult {
  */
 export function pickScenario(
   cenarioKey: string | null,
-  scenarios: Record<string, PenaltyPlayResult[]> = PENALTY_SCENARIOS
+  scenarios: Record<string, PenaltyPlayResult[]> = PENALTY_SCENARIOS,
 ): PenaltyPlayResult[] | null {
-  if (!cenarioKey) return null
-  const cenario = scenarios[cenarioKey]
-  return cenario ? [...cenario] : null
+  if (!cenarioKey) return null;
+  const cenario = scenarios[cenarioKey];
+  return cenario ? [...cenario] : null;
 }
 
-const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function useGameApi() {
   const apiBase = (() => {
-    if (typeof window === 'undefined') return ''
-    return new URLSearchParams(window.location.search).get('api') ?? ''
-  })()
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("api") ?? "";
+  })();
 
   async function fetchGames(): Promise<GameInfo[]> {
     if (USE_MOCK || !apiBase) {
-      await delay(120)
-      return MOCK_GAMES
+      await delay(120);
+      return MOCK_GAMES;
     }
-    const res = await fetch(`${apiBase}/games`)
-    if (!res.ok) throw new Error(`Falha ao carregar jogos: ${res.status}`)
-    const data = (await res.json()) as { games: GameInfo[] }
-    return data.games
+    const res = await fetch(`${apiBase}/games`);
+    if (!res.ok) throw new Error(`Falha ao carregar jogos: ${res.status}`);
+    const data = (await res.json()) as { games: GameInfo[] };
+    return data.games;
   }
 
-  async function fetchPlaySequence(gameId: string, count: number): Promise<PenaltyPlayResult[]> {
+  async function fetchPlaySequence(
+    gameId: string,
+    count: number,
+  ): Promise<PenaltyPlayResult[]> {
     if (USE_MOCK || !apiBase) {
-      await delay(250)
+      await delay(250);
       const cenarioKey =
-        typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('cenario')
-      const cenario = pickScenario(cenarioKey)
-      if (cenario) return cenario
-      return Array.from({ length: count }, mockPlayResult)
+        typeof window === "undefined"
+          ? null
+          : new URLSearchParams(window.location.search).get("cenario");
+      const cenario = pickScenario(cenarioKey);
+      if (cenario) return cenario;
+      return Array.from({ length: count }, mockPlayResult);
     }
-    const res = await fetch(`${apiBase}/games/${gameId}/play-sequence?count=${count}`)
-    if (!res.ok) throw new Error(`Falha ao buscar sequencia de jogadas: ${res.status}`)
-    const data = (await res.json()) as { results: PenaltyPlayResult[] }
-    return data.results
+    const res = await fetch(
+      `${apiBase}/games/${gameId}/play-sequence?count=${count}`,
+    );
+    if (!res.ok)
+      throw new Error(`Falha ao buscar sequencia de jogadas: ${res.status}`);
+    const data = (await res.json()) as { results: PenaltyPlayResult[] };
+    return data.results;
   }
 
-  return { fetchGames, fetchPlaySequence }
+  return { fetchGames, fetchPlaySequence };
 }
 ```
 
@@ -305,62 +598,65 @@ export function useGameApi() {
 Substitua o conteúdo completo de `app/composables/useGameApi.spec.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import { pickScenario, useGameApi } from './useGameApi'
-import { PENALTY_SCENARIOS } from '../mocks/penaltySequences'
+import { describe, expect, it } from "vitest";
+import { pickScenario, useGameApi } from "./useGameApi";
+import { PENALTY_SCENARIOS } from "../mocks/penaltySequences";
 
-describe('useGameApi', () => {
-  it('fetchPlaySequence retorna exatamente `count` itens no formato PenaltyPlayResult', async () => {
-    const { fetchPlaySequence } = useGameApi()
-    const results = await fetchPlaySequence('penalty-premiado', 15)
-    expect(results).toHaveLength(15)
+describe("useGameApi", () => {
+  it("fetchPlaySequence retorna exatamente `count` itens no formato PenaltyPlayResult", async () => {
+    const { fetchPlaySequence } = useGameApi();
+    const results = await fetchPlaySequence("penalty-premiado", 15);
+    expect(results).toHaveLength(15);
     for (const r of results) {
-      expect(typeof r.id).toBe('number')
-      expect(typeof r.chave_giro).toBe('string')
-      expect(['ganhou', 'nao_ganhou', 'replay']).toContain(r.tipo_acao)
-      expect(['valor', 'cota', 'nao_ganhou', 'replay']).toContain(r.tipo_premio)
-      expect(typeof r.nome).toBe('string')
-      expect(r.valor === null || typeof r.valor === 'string').toBe(true)
+      expect(typeof r.id).toBe("number");
+      expect(typeof r.chave_giro).toBe("string");
+      expect(["ganhou", "nao_ganhou", "replay"]).toContain(r.tipo_acao);
+      expect(["valor", "cota", "nao_ganhou", "replay"]).toContain(
+        r.tipo_premio,
+      );
+      expect(typeof r.nome).toBe("string");
+      expect(r.valor === null || typeof r.valor === "string").toBe(true);
     }
-  })
+  });
 
   it('tipo_acao e tipo_premio sempre combinam ("nao_ganhou"/"replay" batem, "ganhou" nunca vem com eles)', async () => {
-    const { fetchPlaySequence } = useGameApi()
-    const results = await fetchPlaySequence('penalty-premiado', 60)
+    const { fetchPlaySequence } = useGameApi();
+    const results = await fetchPlaySequence("penalty-premiado", 60);
     for (const r of results) {
-      if (r.tipo_acao === 'nao_ganhou') expect(r.tipo_premio).toBe('nao_ganhou')
-      if (r.tipo_acao === 'replay') expect(r.tipo_premio).toBe('replay')
-      if (r.tipo_acao === 'ganhou') {
-        expect(r.tipo_premio).not.toBe('nao_ganhou')
-        expect(r.tipo_premio).not.toBe('replay')
+      if (r.tipo_acao === "nao_ganhou")
+        expect(r.tipo_premio).toBe("nao_ganhou");
+      if (r.tipo_acao === "replay") expect(r.tipo_premio).toBe("replay");
+      if (r.tipo_acao === "ganhou") {
+        expect(r.tipo_premio).not.toBe("nao_ganhou");
+        expect(r.tipo_premio).not.toBe("replay");
       }
     }
-  })
+  });
 
-  it('gera pelo menos uma vitoria, uma derrota e um replay numa amostra grande', async () => {
-    const { fetchPlaySequence } = useGameApi()
-    const results = await fetchPlaySequence('penalty-premiado', 120)
-    expect(results.some((r) => r.tipo_acao === 'ganhou')).toBe(true)
-    expect(results.some((r) => r.tipo_acao === 'nao_ganhou')).toBe(true)
-    expect(results.some((r) => r.tipo_acao === 'replay')).toBe(true)
-  })
-})
+  it("gera pelo menos uma vitoria, uma derrota e um replay numa amostra grande", async () => {
+    const { fetchPlaySequence } = useGameApi();
+    const results = await fetchPlaySequence("penalty-premiado", 120);
+    expect(results.some((r) => r.tipo_acao === "ganhou")).toBe(true);
+    expect(results.some((r) => r.tipo_acao === "nao_ganhou")).toBe(true);
+    expect(results.some((r) => r.tipo_acao === "replay")).toBe(true);
+  });
+});
 
-describe('pickScenario', () => {
-  it('retorna null quando a chave e null', () => {
-    expect(pickScenario(null)).toBeNull()
-  })
+describe("pickScenario", () => {
+  it("retorna null quando a chave e null", () => {
+    expect(pickScenario(null)).toBeNull();
+  });
 
-  it('retorna null quando a chave nao existe em nenhum cenario', () => {
-    expect(pickScenario('chave-inexistente')).toBeNull()
-  })
+  it("retorna null quando a chave nao existe em nenhum cenario", () => {
+    expect(pickScenario("chave-inexistente")).toBeNull();
+  });
 
-  it('retorna uma copia do cenario quando a chave existe', () => {
-    const resultado = pickScenario('todas_derrotas')
-    expect(resultado).toEqual(PENALTY_SCENARIOS.todas_derrotas)
-    expect(resultado).not.toBe(PENALTY_SCENARIOS.todas_derrotas)
-  })
-})
+  it("retorna uma copia do cenario quando a chave existe", () => {
+    const resultado = pickScenario("todas_derrotas");
+    expect(resultado).toEqual(PENALTY_SCENARIOS.todas_derrotas);
+    expect(resultado).not.toBe(PENALTY_SCENARIOS.todas_derrotas);
+  });
+});
 ```
 
 - [ ] **Step 6: Rodar todos os testes e confirmar que passam**
@@ -380,10 +676,12 @@ git commit --no-gpg-sign -m "feat: adiciona premio de replay, sessao unica e cen
 ## Task 2: Módulo puro de sessão (`app/game/session.ts`)
 
 **Files:**
+
 - Create: `app/game/session.ts`
 - Test: `app/game/session.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `PenaltyPlayResult` de `../composables/useGameApi` (Task 1).
 - Produces: `chancesRestantes(queue: PenaltyPlayResult[]): number`, `isSessionOver(queue: PenaltyPlayResult[]): boolean`, `PremioGanho` (`{ nome: string; tipo_premio: 'valor' | 'cota'; valor: string | null }`), `filtrarPremiosGanhados(results: PenaltyPlayResult[]): PremioGanho[]`.
 
@@ -392,74 +690,90 @@ git commit --no-gpg-sign -m "feat: adiciona premio de replay, sessao unica e cen
 Crie `app/game/session.spec.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest'
-import { chancesRestantes, filtrarPremiosGanhados, isSessionOver } from './session'
-import type { PenaltyPlayResult } from '../composables/useGameApi'
+import { describe, expect, it } from "vitest";
+import {
+  chancesRestantes,
+  filtrarPremiosGanhados,
+  isSessionOver,
+} from "./session";
+import type { PenaltyPlayResult } from "../composables/useGameApi";
 
 function item(overrides: Partial<PenaltyPlayResult>): PenaltyPlayResult {
   return {
     id: 1,
-    chave_giro: 'x',
-    tipo_acao: 'nao_ganhou',
-    tipo_premio: 'nao_ganhou',
-    nome: 'Nao foi dessa vez',
+    chave_giro: "x",
+    tipo_acao: "nao_ganhou",
+    tipo_premio: "nao_ganhou",
+    nome: "Nao foi dessa vez",
     valor: null,
-    ...overrides
-  }
+    ...overrides,
+  };
 }
 
-describe('chancesRestantes', () => {
-  it('conta ganhou e nao_ganhou, mas nao conta replay', () => {
+describe("chancesRestantes", () => {
+  it("conta ganhou e nao_ganhou, mas nao conta replay", () => {
     const fila = [
-      item({ tipo_acao: 'ganhou', tipo_premio: 'valor' }),
-      item({ tipo_acao: 'replay', tipo_premio: 'replay' }),
-      item({ tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou' })
-    ]
-    expect(chancesRestantes(fila)).toBe(2)
-  })
+      item({ tipo_acao: "ganhou", tipo_premio: "valor" }),
+      item({ tipo_acao: "replay", tipo_premio: "replay" }),
+      item({ tipo_acao: "nao_ganhou", tipo_premio: "nao_ganhou" }),
+    ];
+    expect(chancesRestantes(fila)).toBe(2);
+  });
 
-  it('retorna 0 para fila vazia', () => {
-    expect(chancesRestantes([])).toBe(0)
-  })
+  it("retorna 0 para fila vazia", () => {
+    expect(chancesRestantes([])).toBe(0);
+  });
 
-  it('retorna 0 quando a fila so tem replays', () => {
-    const fila = [item({ tipo_acao: 'replay', tipo_premio: 'replay' })]
-    expect(chancesRestantes(fila)).toBe(0)
-  })
-})
+  it("retorna 0 quando a fila so tem replays", () => {
+    const fila = [item({ tipo_acao: "replay", tipo_premio: "replay" })];
+    expect(chancesRestantes(fila)).toBe(0);
+  });
+});
 
-describe('isSessionOver', () => {
-  it('true quando a fila esta vazia', () => {
-    expect(isSessionOver([])).toBe(true)
-  })
+describe("isSessionOver", () => {
+  it("true quando a fila esta vazia", () => {
+    expect(isSessionOver([])).toBe(true);
+  });
 
-  it('false enquanto a fila tiver qualquer item, incluindo so replay', () => {
-    expect(isSessionOver([item({ tipo_acao: 'replay', tipo_premio: 'replay' })])).toBe(false)
-  })
-})
+  it("false enquanto a fila tiver qualquer item, incluindo so replay", () => {
+    expect(
+      isSessionOver([item({ tipo_acao: "replay", tipo_premio: "replay" })]),
+    ).toBe(false);
+  });
+});
 
-describe('filtrarPremiosGanhados', () => {
-  it('inclui apenas ganhou com tipo_premio valor ou cota', () => {
+describe("filtrarPremiosGanhados", () => {
+  it("inclui apenas ganhou com tipo_premio valor ou cota", () => {
     const resultados = [
-      item({ tipo_acao: 'ganhou', tipo_premio: 'valor', nome: 'R$ 50,00', valor: '50' }),
-      item({ tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou' }),
-      item({ tipo_acao: 'replay', tipo_premio: 'replay' }),
-      item({ tipo_acao: 'ganhou', tipo_premio: 'cota', nome: '5 Cotas', valor: '5' })
-    ]
+      item({
+        tipo_acao: "ganhou",
+        tipo_premio: "valor",
+        nome: "R$ 50,00",
+        valor: "50",
+      }),
+      item({ tipo_acao: "nao_ganhou", tipo_premio: "nao_ganhou" }),
+      item({ tipo_acao: "replay", tipo_premio: "replay" }),
+      item({
+        tipo_acao: "ganhou",
+        tipo_premio: "cota",
+        nome: "5 Cotas",
+        valor: "5",
+      }),
+    ];
     expect(filtrarPremiosGanhados(resultados)).toEqual([
-      { nome: 'R$ 50,00', tipo_premio: 'valor', valor: '50' },
-      { nome: '5 Cotas', tipo_premio: 'cota', valor: '5' }
-    ])
-  })
+      { nome: "R$ 50,00", tipo_premio: "valor", valor: "50" },
+      { nome: "5 Cotas", tipo_premio: "cota", valor: "5" },
+    ]);
+  });
 
-  it('retorna array vazio quando nao ha premios ganhos', () => {
+  it("retorna array vazio quando nao ha premios ganhos", () => {
     const resultados = [
-      item({ tipo_acao: 'nao_ganhou', tipo_premio: 'nao_ganhou' }),
-      item({ tipo_acao: 'replay', tipo_premio: 'replay' })
-    ]
-    expect(filtrarPremiosGanhados(resultados)).toEqual([])
-  })
-})
+      item({ tipo_acao: "nao_ganhou", tipo_premio: "nao_ganhou" }),
+      item({ tipo_acao: "replay", tipo_premio: "replay" }),
+    ];
+    expect(filtrarPremiosGanhados(resultados)).toEqual([]);
+  });
+});
 ```
 
 - [ ] **Step 2: Rodar os testes para confirmar que falham**
@@ -470,7 +784,7 @@ Expected: FAIL com "Cannot find module './session'" (arquivo ainda não existe)
 - [ ] **Step 3: Implementar `app/game/session.ts`**
 
 ```ts
-import type { PenaltyPlayResult } from '../composables/useGameApi'
+import type { PenaltyPlayResult } from "../composables/useGameApi";
 
 /**
  * Chances "reais" restantes na fila — replay nao conta (nao decrementa),
@@ -478,7 +792,7 @@ import type { PenaltyPlayResult } from '../composables/useGameApi'
  * (play-components-web/src/components/Roleta/composables/useGirarRoleta.ts).
  */
 export function chancesRestantes(queue: PenaltyPlayResult[]): number {
-  return queue.filter((r) => r.tipo_acao !== 'replay').length
+  return queue.filter((r) => r.tipo_acao !== "replay").length;
 }
 
 /**
@@ -487,13 +801,13 @@ export function chancesRestantes(queue: PenaltyPlayResult[]): number {
  * ja mostre 0.
  */
 export function isSessionOver(queue: PenaltyPlayResult[]): boolean {
-  return queue.length === 0
+  return queue.length === 0;
 }
 
 export interface PremioGanho {
-  nome: string
-  tipo_premio: 'valor' | 'cota'
-  valor: string | null
+  nome: string;
+  tipo_premio: "valor" | "cota";
+  valor: string | null;
 }
 
 /**
@@ -502,13 +816,16 @@ export interface PremioGanho {
  * aparecem, igual ao filtro `filtrarPremiosGanhados`/`premiosGirarTudo` da
  * Roleta.
  */
-export function filtrarPremiosGanhados(results: PenaltyPlayResult[]): PremioGanho[] {
+export function filtrarPremiosGanhados(
+  results: PenaltyPlayResult[],
+): PremioGanho[] {
   return results
     .filter(
-      (r): r is PenaltyPlayResult & { tipo_premio: 'valor' | 'cota' } =>
-        r.tipo_acao === 'ganhou' && (r.tipo_premio === 'valor' || r.tipo_premio === 'cota')
+      (r): r is PenaltyPlayResult & { tipo_premio: "valor" | "cota" } =>
+        r.tipo_acao === "ganhou" &&
+        (r.tipo_premio === "valor" || r.tipo_premio === "cota"),
     )
-    .map((r) => ({ nome: r.nome, tipo_premio: r.tipo_premio, valor: r.valor }))
+    .map((r) => ({ nome: r.nome, tipo_premio: r.tipo_premio, valor: r.valor }));
 }
 ```
 
@@ -529,10 +846,12 @@ git commit --no-gpg-sign -m "feat: modulo puro de sessao (chances restantes, fim
 ## Task 3: `ModalArea.vue` (wrapper) e `Botao.vue` (botão reutilizável)
 
 **Files:**
+
 - Create: `app/components/Modais/ModalArea.vue`
 - Create: `app/components/Modais/Botao.vue`
 
 **Interfaces:**
+
 - Produces: `ModalArea` (props: `ariaLabel: string`, `variant?: 'win' | 'lose'`; slot default), `Botao` (props: `titulo: string`, `variant?: 'primary' | 'outline'`, `disabled?: boolean`; emit `click`).
 
 **Nota de escopo:** diferente do `ModalArea.vue`/`Botao.vue` da Roleta (que usam `inject(CONFIG_RASPADINHA)` para tema dinâmico e Tailwind), aqui as cores ficam fixas no CSS (mesma paleta já usada nos cards inline atuais — verde `#8dff5a`, dourado `#ffd23f`) porque esse projeto não tem Pinia nem sistema de tema — não precisa.
@@ -549,7 +868,7 @@ git commit --no-gpg-sign -m "feat: modulo puro de sessao (chances restantes, fim
 </template>
 
 <script setup lang="ts">
-withDefaults(defineProps<{ ariaLabel: string; variant?: 'win' | 'lose' }>(), {
+withDefaults(defineProps<{ ariaLabel: string; variant?: "win" | "lose" }>(), {
   variant: undefined,
 });
 </script>
@@ -687,7 +1006,7 @@ defineEmits<{ click: [] }>();
 
 .botao-primary {
   border: 0;
-  color: #04120a;
+  color: #00061b;
   background: linear-gradient(160deg, #ffe066, #ffd23f 55%, #eab308);
   box-shadow: 0 10px 26px rgba(255, 210, 63, 0.32);
 }
@@ -725,11 +1044,13 @@ git commit --no-gpg-sign -m "feat: componentes base de modal (ModalArea, Botao) 
 ## Task 4: Modais de resultado — `ModalGol`, `ModalDefendeu`, `ModalChuteExtra`
 
 **Files:**
+
 - Create: `app/components/Modais/ModalGol.vue`
 - Create: `app/components/Modais/ModalDefendeu.vue`
 - Create: `app/components/Modais/ModalChuteExtra.vue`
 
 **Interfaces:**
+
 - Consumes: `ModalArea`, `Botao` (Task 3); `PenaltyPlayResult` de `~/composables/useGameApi` (Task 1).
 - Produces: `ModalGol` (props: `premio: PenaltyPlayResult | null`, `ultimaChance: boolean`; emit `continuar`), `ModalDefendeu` (props: `ultimaChance: boolean`; emit `continuar`), `ModalChuteExtra` (props: `ultimaChance: boolean`; emit `continuar`).
 
@@ -845,7 +1166,7 @@ defineEmits<{ continuar: [] }>();
 }
 
 .badge-win {
-  color: #04120a;
+  color: #00061b;
   background: radial-gradient(circle at 32% 28%, #ffe789, #ffd23f 55%, #d99a12);
   box-shadow: 0 10px 30px rgba(255, 210, 63, 0.4);
 }
@@ -1044,9 +1365,7 @@ defineEmits<{ continuar: [] }>();
         stroke-linecap="round"
         stroke-linejoin="round"
       >
-        <path
-          d="M12 3c3.5 0 6 2 6 5.5V13a6 6 0 0 1-12 0V8.5C6 5 8.5 3 12 3Z"
-        />
+        <path d="M12 3c3.5 0 6 2 6 5.5V13a6 6 0 0 1-12 0V8.5C6 5 8.5 3 12 3Z" />
         <path d="M9 7v4M12 6.5V11M15 7v4" />
       </svg>
     </div>
@@ -1211,7 +1530,7 @@ defineEmits<{ continuar: [] }>();
 }
 
 .badge-replay {
-  color: #04120a;
+  color: #00061b;
   background: radial-gradient(circle at 32% 28%, #a9d8ff, #6fb8ff 55%, #2f7fd1);
   box-shadow: 0 10px 30px rgba(111, 184, 255, 0.4);
 }
@@ -1270,10 +1589,12 @@ git commit --no-gpg-sign -m "feat: modais de resultado (Gol, Defendeu, Chute Ext
 ## Task 5: `ModalChutarTudoConfirm` e `ModalResumoChutarTudo`
 
 **Files:**
+
 - Create: `app/components/Modais/ModalChutarTudoConfirm.vue`
 - Create: `app/components/Modais/ModalResumoChutarTudo.vue`
 
 **Interfaces:**
+
 - Consumes: `ModalArea`, `Botao` (Task 3); `PremioGanho` de `~/game/session` (Task 2).
 - Produces: `ModalChutarTudoConfirm` (props: `fase: 'confirmar' | 'progresso'`, `quantidade: number`; emits `confirmar`, `cancelar`), `ModalResumoChutarTudo` (props: `premios: PremioGanho[]`; emit `continuar`).
 
@@ -1287,8 +1608,8 @@ git commit --no-gpg-sign -m "feat: modais de resultado (Gol, Defendeu, Chute Ext
     <template v-if="fase === 'confirmar'">
       <h2 class="card-title">Chutar tudo?</h2>
       <p class="card-sub">
-        Suas {{ quantidade }} chances restantes vao ser jogadas
-        automaticamente e o resultado aparece no final.
+        Suas {{ quantidade }} chances restantes vao ser jogadas automaticamente
+        e o resultado aparece no final.
       </p>
 
       <div class="botoes">
@@ -1456,9 +1777,11 @@ git commit --no-gpg-sign -m "feat: modais de confirmacao e resumo do Chutar tudo
 ## Task 6: Barra de histórico (`HistoricoBar.vue`)
 
 **Files:**
+
 - Create: `app/components/HistoricoBar.vue`
 
 **Interfaces:**
+
 - Consumes: `PenaltyPlayResult` de `~/composables/useGameApi` (Task 1).
 - Produces: `HistoricoBar` (props: `history: PenaltyPlayResult[]`).
 
@@ -1555,7 +1878,7 @@ function tipoIcone(item: PenaltyPlayResult): "gol" | "defendeu" | "replay" {
 }
 
 .historico-gol {
-  color: #04120a;
+  color: #00061b;
   background: #8dff5a;
 }
 
@@ -1565,7 +1888,7 @@ function tipoIcone(item: PenaltyPlayResult): "gol" | "defendeu" | "replay" {
 }
 
 .historico-replay {
-  color: #04120a;
+  color: #00061b;
   background: #6fb8ff;
 }
 </style>
@@ -1583,12 +1906,15 @@ git commit --no-gpg-sign -m "feat: barra de historico com icones dos ultimos res
 ## Task 7: Integração em `PenaltyGame.client.vue`
 
 **Files:**
+
 - Modify: `app/components/PenaltyGame.client.vue` (arquivo inteiro substituído — ver conteúdo completo abaixo)
 
 **Interfaces:**
+
 - Consumes: `MOCK_SESSION_SIZE`, `PenaltyPlayResult` (Task 1); `chancesRestantes`, `isSessionOver`, `filtrarPremiosGanhados`, `PremioGanho` (Task 2); `ModalGol`, `ModalDefendeu`, `ModalChuteExtra`, `ModalChutarTudoConfirm`, `ModalResumoChutarTudo` (Tasks 4-5); `HistoricoBar` (Task 6).
 
 **O que muda em relação ao arquivo atual:**
+
 - `fetchPlaySequence` é chamado **uma vez** por sessão (no primeiro "Chutar"), não mais em lotes com reabastecimento — remove `SEQUENCE_BATCH_SIZE`/`REFILL_THRESHOLD`/`maybeRefill`/`nextPlayResult`.
 - `attempts`/`goals`/`lastOutcome` são removidos — eram estado morto (nunca renderizado no template atual).
 - `onResult` passa a decidir o modal a partir de `currentPlayResult.tipo_acao` (que agora inclui `'replay'`), não mais a partir do `outcome` físico recebido da engine (que só tem `'goal'|'save'`) — isso é o que faz o replay (fisicamente animado como `'save'`) abrir o modal certo em vez de "Defendeu!".
@@ -1666,9 +1992,7 @@ const premiosChutarTudo = ref<PremioGanho[]>([]);
 let engine: PenaltyEngine3D | null = null;
 const sfx = new Sfx();
 
-const chancesRestantesValue = computed(() =>
-  chancesRestantes(playQueue.value),
-);
+const chancesRestantesValue = computed(() => chancesRestantes(playQueue.value));
 const sessaoEncerrada = computed(
   () => sessionStarted.value && isSessionOver(playQueue.value),
 );
@@ -1933,7 +2257,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #04120a;
+  background: #00061b;
   overflow: hidden;
 }
 
@@ -1945,7 +2269,7 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background-color: #04120a;
+  background-color: #00061b;
   background-size: cover;
   background-position: center;
   touch-action: none;
@@ -2059,7 +2383,7 @@ onBeforeUnmount(() => {
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #04120a;
+  color: #00061b;
   background: #8dff5a;
   padding: 12px 34px;
   border-radius: 999px;
@@ -2171,6 +2495,7 @@ Run: `npm run dev`
 Abra a página sem query string. Clique em "Chutar" algumas vezes seguidas.
 
 Verificar:
+
 - Contador "X chances restantes" aparece sobre o telão e diminui a cada chute real (ganhou/nao_ganhou), mas **não** diminui quando o resultado é "Chute Extra".
 - Barra de histórico aparece acima do botão "Chutar" depois do primeiro chute, com o ícone certo por tipo (✓ verde = gol, ✗ cinza = defendeu, ↻ azul = chute extra), mostrando no máximo os últimos 8.
 - Botão "Chutar tudo" começa desabilitado (fila vazia antes do 1º chute) e habilita depois do 1º chute, contanto que reste mais de 1 chance real.
@@ -2180,6 +2505,7 @@ Verificar:
 Abra `?cenario=todas_derrotas`. Clique em "Chutar" 5 vezes.
 
 Verificar:
+
 - Todos os 5 chutes abrem `ModalDefendeu` ("Defendeu!").
 - No 5º chute, o botão do modal mostra "Jogar novamente" (não "Tentar novamente").
 - Clicar em "Jogar novamente" reinicia: contador de chances volta a subir no próximo "Chutar" (busca nova sequência), histórico visualmente reseta.
@@ -2189,6 +2515,7 @@ Verificar:
 Abra `?cenario=todos_replays`. Clique em "Chutar" 5 vezes.
 
 Verificar:
+
 - Cada chute abre `ModalChuteExtra` ("Chute Extra!").
 - O contador de chances **nunca** diminui (fica em 5 o tempo todo, já que nenhum item é ganhou/nao_ganhou).
 - No 5º chute (fila fica vazia), o modal mostra "Jogar novamente".
@@ -2201,6 +2528,7 @@ Abra `?cenario=alternado` (5 itens: ganhou/nao_ganhou/replay/ganhou/nao_ganhou).
 Clique em "Chutar tudo".
 
 Verificar:
+
 - Abre modal de confirmação ("Chutar tudo?").
 - Ao confirmar, mostra o modal de progresso (barra animada) por ~1.5s, **sem** o goleiro pular de novo na tela.
 - Ao terminar, mostra o resumo com os prêmios ganhos dos itens restantes (não deve listar o item já consumido manualmente no passo anterior, nem replay, nem derrota).
