@@ -35,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import type { PenaltyPlayResult } from "~/composables/useGameApi";
+import type { PenaltyPlayResult } from "~/types/game";
 import ModalArea from "./ModalArea.vue";
 import Botao from "./Botao.vue";
 

@@ -1,4 +1,4 @@
-import type { PenaltyPlayResult } from '../composables/useGameApi'
+import type { PenaltyPlayResult } from '../types/game'
 
 /**
  * Cenarios fixos para testar fluxos de UI sem depender do gerador aleatorio

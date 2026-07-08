@@ -14,7 +14,7 @@ export const KEEPER_REACH_FACTOR = 0.36
 
 /**
  * O goleiro nao decide mais o resultado (isso vem pronto da API, ver
- * `PenaltyPlayResult` em `useGameApi.ts`) — so calcula PARA ONDE ele
+ * `PenaltyPlayResult` em `~/types/game.ts`) — so calcula PARA ONDE ele
  * mergulha dado um resultado ja definido. `outcome: 'save'` mergulha exato
  * no alvo (defende sempre); `outcome: 'goal'` mergulha para o lado oposto
  * do gol (erra sempre, distancia sempre maior que o alcance).
