@@ -1,216 +1,185 @@
 <script setup lang="ts">
-import { PenaltyEngine3D } from "~/game/engine3d/penaltyEngine3d";
-import type { ShotOutcome, EngineState } from "~/game/types";
-import { Sfx } from "~/game/sfx";
-import type { GameInfo, PenaltyPlayResult } from "~/composables/useGameApi";
-import { MOCK_SESSION_SIZE } from "~/composables/useGameApi";
-import {
-  chancesRestantes,
-  isSessionOver,
-  filtrarPremiosGanhados,
-  type PremioGanho,
-} from "~/game/session";
-import HistoricoBar from "~/components/HistoricoBar.vue";
-import ModalGol from "~/components/Modais/ModalGol.vue";
-import ModalDefendeu from "~/components/Modais/ModalDefendeu.vue";
-import ModalChuteExtra from "~/components/Modais/ModalChuteExtra.vue";
-import ModalChutarTudoConfirm from "~/components/Modais/ModalChutarTudoConfirm.vue";
-import ModalResumoChutarTudo from "~/components/Modais/ModalResumoChutarTudo.vue";
-import confetti from "canvas-confetti";
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import type { ShotOutcome } from '~/game/types'
+import { MOCK_SESSION_SIZE } from '~/utils/api-helpers'
+import HistoricoBar from '~/components/HistoricoBar.vue'
+import ModalGol from '~/components/Modais/ModalGol.vue'
+import ModalDefendeu from '~/components/Modais/ModalDefendeu.vue'
+import ModalChuteExtra from '~/components/Modais/ModalChuteExtra.vue'
+import ModalChutarTudoConfirm from '~/components/Modais/ModalChutarTudoConfirm.vue'
+import ModalResumoChutarTudo from '~/components/Modais/ModalResumoChutarTudo.vue'
+import confetti from 'canvas-confetti'
 
-const { fetchGames, fetchPlaySequence } = useGameApi();
+import { useGameSession } from '~/composables/game/useGameSession'
+import { useGameModals } from '~/composables/game/useGameModals'
+import { useGameAudio } from '~/composables/game/useGameAudio'
+import { useEngineIntegration } from '~/composables/game/useEngineIntegration'
+import { useChutarTudo } from '~/composables/game/useChutarTudo'
 
-const canvasRef = ref<HTMLCanvasElement | null>(null);
-const engineState = ref<EngineState>("ready");
-// Fundo de estadio gerado por IA: retrato para celular (ate 565px de
-// largura), paisagem para desktop (acima disso). Ambos sempre ocupam 100%
-// da viewport (background-size: cover cropa o que sobrar) — sem travar
-// proporcao nem pillarbox/letterbox.
-const DESKTOP_BREAKPOINT = 565;
-const isDesktopLayout = ref(false);
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+
+const DESKTOP_BREAKPOINT = 565
+const isDesktopLayout = ref(false)
 const bgImage = computed(() =>
-  isDesktopLayout.value
-    ? "/images/stadium-bg-landscape.webp"
-    : "/images/stadium-bg-portrait.webp",
-);
+  isDesktopLayout.value ? '/images/stadium-bg-landscape.webp' : '/images/stadium-bg-portrait.webp'
+)
 
 function updateLayoutMode() {
-  isDesktopLayout.value = window.innerWidth > DESKTOP_BREAKPOINT;
+  isDesktopLayout.value = window.innerWidth > DESKTOP_BREAKPOINT
 }
 
-const game = ref<GameInfo | null>(null);
-const muted = ref(false);
+const {
+  game,
+  sessionStarted,
+  awaitingSequence,
+  playQueue,
+  history,
+  currentPlayResult,
+  chancesRestantesValue,
+  sessaoEncerrada,
+  playHistory,
+  loadActiveGame,
+  startSession,
+  consumeNextPlay,
+  registerPlayedResult,
+  resetSession
+} = useGameSession()
 
-type ModalState =
-  | "none"
-  | "gol"
-  | "defendeu"
-  | "chute-extra"
-  | "chutar-tudo-confirmar"
-  | "chutar-tudo-progresso"
-  | "resumo-tudo";
+const {
+  modal,
+  closeModal,
+  openGolModal,
+  openDefendeuModal,
+  openChuteExtraModal,
+  openChutarTudoConfirm,
+  openChutarTudoProgresso,
+  openResumoTudo
+} = useGameModals()
 
-const modal = ref<ModalState>("none");
-const currentPlayResult = ref<PenaltyPlayResult | null>(null);
-const awaitingSequence = ref(false);
-const sessionStarted = ref(false);
+const {
+  sfx,
+  muted,
+  toggleMute,
+  handleVisibilityChange,
+  destroyAudio
+} = useGameAudio()
 
-// Fila de resultados ja decididos pela API para a sessao inteira (buscada
-// uma unica vez, no primeiro "Chutar") e historico dos ja consumidos. Ambos
-// precisam ser reativos (ref) porque o contador de chances e a barra de
-// historico dependem deles.
-const playQueue = ref<PenaltyPlayResult[]>([]);
-const history = ref<PenaltyPlayResult[]>([]);
-const premiosChutarTudo = ref<PremioGanho[]>([]);
+const {
+  engineState,
+  mountEngine,
+  shoot,
+  resetEngine,
+  destroyEngine
+} = useEngineIntegration()
 
-let engine: PenaltyEngine3D | null = null;
-const sfx = new Sfx();
-
-const chancesRestantesValue = computed(() => chancesRestantes(playQueue.value));
-const sessaoEncerrada = computed(
-  () => sessionStarted.value && isSessionOver(playQueue.value),
-);
-const podeChutarTudo = computed(
-  () =>
-    chancesRestantesValue.value > 1 &&
-    !awaitingSequence.value &&
-    (engineState.value === "ready" || engineState.value === "aiming"),
-);
-
-const playHistory = computed(() => history.value);
+const {
+  premiosChutarTudo,
+  podeChutarTudo,
+  processAllRemainingPlays
+} = useChutarTudo(playQueue, history, chancesRestantesValue, awaitingSequence, engineState)
 
 const jumboState = computed(() => {
-  if (modal.value === "none" || !currentPlayResult.value) return "idle";
-  return currentPlayResult.value.tipo_acao;
-});
+  if (modal.value === 'none' || !currentPlayResult.value) return 'idle'
+  return currentPlayResult.value.tipo_acao
+})
 
 async function onShootClick() {
-  if (!engine || awaitingSequence.value || modal.value !== "none") return;
-  const gameId = game.value?.id ?? "penalty-premiado";
+  if (awaitingSequence.value || modal.value !== 'none') return
   if (!sessionStarted.value) {
-    awaitingSequence.value = true;
-    playQueue.value = await fetchPlaySequence(gameId, MOCK_SESSION_SIZE);
-    sessionStarted.value = true;
-    awaitingSequence.value = false;
+    await startSession(MOCK_SESSION_SIZE)
   }
-  if (playQueue.value.length === 0) return;
-  const result = playQueue.value.shift()!;
-  currentPlayResult.value = result;
-  // O goleiro so encena visualmente — replay usa 'save' arbitrariamente,
-  // ja que nao ha um terceiro valor fisico na engine (ShotOutcome continua
-  // 'goal' | 'save'). Quem decide o modal certo e onResult(), lendo
-  // currentPlayResult.tipo_acao, nao esse valor fisico.
-  const engineOutcome: ShotOutcome =
-    result.tipo_acao === "ganhou" ? "goal" : "save";
-  engine.shoot(engineOutcome);
+  const result = consumeNextPlay()
+  if (!result) return
+  const engineOutcome: ShotOutcome = result.tipo_acao === 'ganhou' ? 'goal' : 'save'
+  shoot(engineOutcome)
 }
 
 function onResult(outcome: ShotOutcome) {
-  const result = currentPlayResult.value;
-  if (!result) return;
-  history.value.push(result);
-  if (result.tipo_acao === "ganhou") {
-    modal.value = "gol";
-    sfx.playWinModal();
-    sfx.stopGoalCrowd();
-    
-    // Dispara confetes vindo de tras do gol (centro-baixo da tela)
+  const result = currentPlayResult.value
+  if (!result) return
+  registerPlayedResult()
+
+  if (result.tipo_acao === 'ganhou') {
+    openGolModal()
+    sfx.playWinModal()
+    sfx.stopGoalCrowd()
     confetti({
       particleCount: 120,
       spread: 80,
       origin: { y: 0.65, x: 0.5 },
-      colors: ["#ffd700", "#32ff64", "#ffffff"],
+      colors: ['#ffd700', '#32ff64', '#ffffff'],
       zIndex: 2000,
       disableForReducedMotion: true
-    });
-  } else if (result.tipo_acao === "replay") {
-    modal.value = "chute-extra";
+    })
+  } else if (result.tipo_acao === 'replay') {
+    openChuteExtraModal()
   } else {
-    modal.value = "defendeu";
+    openDefendeuModal()
   }
 }
 
 function onModalContinuar() {
   if (sessaoEncerrada.value) {
-    jogarNovamente();
-    return;
+    jogarNovamente()
+    return
   }
-  modal.value = "none";
-  currentPlayResult.value = null;
-  engine?.reset();
-  sfx.whistle();
+  closeModal()
+  currentPlayResult.value = null
+  resetEngine()
+  sfx.whistle()
 }
 
 function jogarNovamente() {
-  modal.value = "none";
-  currentPlayResult.value = null;
-  history.value = [];
-  sessionStarted.value = false;
-  playQueue.value = [];
-  engine?.reset();
-  sfx.whistle();
+  closeModal()
+  resetSession()
+  resetEngine()
+  sfx.whistle()
 }
 
 function abrirChutarTudoConfirm() {
-  if (!podeChutarTudo.value) return;
-  modal.value = "chutar-tudo-confirmar";
+  if (!podeChutarTudo.value) return
+  openChutarTudoConfirm()
 }
 
 function confirmarChutarTudo() {
-  modal.value = "chutar-tudo-progresso";
-  // Nao re-anima a engine por item (levaria 2-3s x N chutes) — resolve
-  // todos os itens restantes da fila de uma vez so nos dados, com um
-  // loading falso, igual ao confirmarGirarTodas() da Roleta
-  // (play-components-web/src/components/Roleta/composables/useGirarRoleta.ts).
+  openChutarTudoProgresso()
   setTimeout(() => {
-    const consumidos = playQueue.value.splice(0);
-    history.value.push(...consumidos);
-    premiosChutarTudo.value = filtrarPremiosGanhados(consumidos);
-    modal.value = "resumo-tudo";
-  }, 1500);
-}
-
-function toggleMute() {
-  muted.value = !muted.value;
-  sfx.setMuted(muted.value);
-}
-
-function handleVisibilityChange() {
-  sfx.handleVisibility(document.hidden);
+    processAllRemainingPlays()
+    openResumoTudo()
+  }, 1500)
 }
 
 onMounted(async () => {
-  updateLayoutMode();
-  window.addEventListener("resize", updateLayoutMode);
-  document.addEventListener("visibilitychange", handleVisibilityChange);
+  updateLayoutMode()
+  window.addEventListener('resize', updateLayoutMode)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 
-  game.value = (await fetchGames()).find((g) => g.active) ?? null;
+  await loadActiveGame()
 
-  if (!canvasRef.value) return;
-  engine = new PenaltyEngine3D(canvasRef.value, {
+  if (!canvasRef.value) return
+  mountEngine(canvasRef.value, {
     onResult,
     onStateChange: (s) => {
-      engineState.value = s;
-      if (s === "aiming") sfx.startAmbient();
+      if (s === 'aiming') sfx.startAmbient()
     },
     onKick: () => sfx.kick(),
     onImpact: (outcome) => {
-      if (outcome === "goal") {
-        sfx.roar();
-        sfx.playGoalCrowd();
+      if (outcome === 'goal') {
+        sfx.roar()
+        sfx.playGoalCrowd()
       } else {
-        sfx.groan();
+        sfx.groan()
       }
-    },
-  });
-});
+    }
+  })
+})
 
 onBeforeUnmount(() => {
-  window.removeEventListener("resize", updateLayoutMode);
-  document.removeEventListener("visibilitychange", handleVisibilityChange);
-  engine?.destroy();
-  sfx.destroy();
-});
+  window.removeEventListener('resize', updateLayoutMode)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  destroyEngine()
+  destroyAudio()
+})
 </script>
 
 <template>
