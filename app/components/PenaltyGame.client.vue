@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import type { ShotOutcome } from '~/game/types'
-import { MOCK_SESSION_SIZE } from '~/utils/api-helpers'
+import type { PenaltyPlayResult } from '~/types/game'
+import { filtrarPremiosGanhados } from '~/game/session'
 import HistoricoBar from '~/components/HistoricoBar.vue'
 import ModalGol from '~/components/Modais/ModalGol.vue'
 import ModalDefendeu from '~/components/Modais/ModalDefendeu.vue'
 import ModalChuteExtra from '~/components/Modais/ModalChuteExtra.vue'
 import ModalChutarTudoConfirm from '~/components/Modais/ModalChutarTudoConfirm.vue'
-import ModalResumoChutarTudo from '~/components/Modais/ModalResumoChutarTudo.vue'
+import ModalResumoSessao from '~/components/Modais/ModalResumoSessao.vue'
+import ModalSemPremio from '~/components/Modais/ModalSemPremio.vue'
 import confetti from 'canvas-confetti'
 
 import { useGameSession } from '~/composables/game/useGameSession'
@@ -15,6 +17,9 @@ import { useGameModals } from '~/composables/game/useGameModals'
 import { useGameAudio } from '~/composables/game/useGameAudio'
 import { useEngineIntegration } from '~/composables/game/useEngineIntegration'
 import { useChutarTudo } from '~/composables/game/useChutarTudo'
+
+const props = defineProps<{ resultados: PenaltyPlayResult[] }>()
+const emit = defineEmits<{ fechar: [] }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 
@@ -29,21 +34,14 @@ function updateLayoutMode() {
 }
 
 const {
-  game,
-  sessionStarted,
-  awaitingSequence,
   playQueue,
   history,
   currentPlayResult,
   chancesRestantesValue,
   sessaoEncerrada,
-  playHistory,
-  loadActiveGame,
-  startSession,
   consumeNextPlay,
-  registerPlayedResult,
-  resetSession
-} = useGameSession()
+  registerPlayedResult
+} = useGameSession(props.resultados)
 
 const {
   modal,
@@ -53,7 +51,8 @@ const {
   openChuteExtraModal,
   openChutarTudoConfirm,
   openChutarTudoProgresso,
-  openResumoTudo
+  openResumoSessao,
+  openSemPremio
 } = useGameModals()
 
 const {
@@ -73,31 +72,42 @@ const {
 } = useEngineIntegration()
 
 const {
-  premiosChutarTudo,
   podeChutarTudo,
   processAllRemainingPlays
-} = useChutarTudo(playQueue, history, chancesRestantesValue, awaitingSequence, engineState)
+} = useChutarTudo(playQueue, history, chancesRestantesValue, engineState)
+
+const premiosSessao = computed(() => filtrarPremiosGanhados(history.value))
 
 const jumboState = computed(() => {
   if (modal.value === 'none' || !currentPlayResult.value) return 'idle'
   return currentPlayResult.value.tipo_acao
 })
 
-async function onShootClick() {
-  if (awaitingSequence.value || modal.value !== 'none') return
-  if (!sessionStarted.value) {
-    await startSession(MOCK_SESSION_SIZE)
-  }
+function onShootClick() {
+  if (modal.value !== 'none') return
   const result = consumeNextPlay()
   if (!result) return
   const engineOutcome: ShotOutcome = result.tipo_acao === 'ganhou' ? 'goal' : 'save'
   shoot(engineOutcome)
 }
 
+function abrirResumoFinal() {
+  if (premiosSessao.value.length > 0) {
+    openResumoSessao()
+  } else {
+    openSemPremio()
+  }
+}
+
 function onResult(outcome: ShotOutcome) {
   const result = currentPlayResult.value
   if (!result) return
   registerPlayedResult()
+
+  if (sessaoEncerrada.value) {
+    abrirResumoFinal()
+    return
+  }
 
   if (result.tipo_acao === 'ganhou') {
     openGolModal()
@@ -119,21 +129,14 @@ function onResult(outcome: ShotOutcome) {
 }
 
 function onModalContinuar() {
-  if (sessaoEncerrada.value) {
-    jogarNovamente()
-    return
-  }
   closeModal()
   currentPlayResult.value = null
   resetEngine()
   sfx.whistle()
 }
 
-function jogarNovamente() {
-  closeModal()
-  resetSession()
-  resetEngine()
-  sfx.whistle()
+function onFecharJogo() {
+  emit('fechar')
 }
 
 function abrirChutarTudoConfirm() {
@@ -145,16 +148,14 @@ function confirmarChutarTudo() {
   openChutarTudoProgresso()
   setTimeout(() => {
     processAllRemainingPlays()
-    openResumoTudo()
+    abrirResumoFinal()
   }, 1500)
 }
 
-onMounted(async () => {
+onMounted(() => {
   updateLayoutMode()
   window.addEventListener('resize', updateLayoutMode)
   document.addEventListener('visibilitychange', handleVisibilityChange)
-
-  await loadActiveGame()
 
   if (!canvasRef.value) return
   mountEngine(canvasRef.value, {
@@ -271,13 +272,8 @@ onBeforeUnmount(() => {
           "
           class="hint"
         >
-          <button
-            class="hint-badge shoot-btn"
-            type="button"
-            :disabled="awaitingSequence"
-            @click="onShootClick"
-          >
-            {{ awaitingSequence ? "Carregando..." : "Chutar" }}
+          <button class="hint-badge shoot-btn" type="button" @click="onShootClick">
+            Chutar
           </button>
 
           <button
@@ -296,27 +292,18 @@ onBeforeUnmount(() => {
         <ModalGol
           v-if="modal === 'gol'"
           :premio="currentPlayResult"
-          :ultima-chance="sessaoEncerrada"
           @continuar="onModalContinuar"
         />
       </Transition>
 
       <!-- Modal de derrota -->
       <Transition name="modal">
-        <ModalDefendeu
-          v-if="modal === 'defendeu'"
-          :ultima-chance="sessaoEncerrada"
-          @continuar="onModalContinuar"
-        />
+        <ModalDefendeu v-if="modal === 'defendeu'" @continuar="onModalContinuar" />
       </Transition>
 
       <!-- Modal de chute extra (replay) -->
       <Transition name="modal">
-        <ModalChuteExtra
-          v-if="modal === 'chute-extra'"
-          :ultima-chance="sessaoEncerrada"
-          @continuar="onModalContinuar"
-        />
+        <ModalChuteExtra v-if="modal === 'chute-extra'" @continuar="onModalContinuar" />
       </Transition>
 
       <!-- Confirmacao + progresso do "Chutar tudo" -->
@@ -333,13 +320,18 @@ onBeforeUnmount(() => {
         />
       </Transition>
 
-      <!-- Resumo do lote do "Chutar tudo" -->
+      <!-- Resumo final da sessao (ganhou algo) -->
       <Transition name="modal">
-        <ModalResumoChutarTudo
-          v-if="modal === 'resumo-tudo'"
-          :premios="premiosChutarTudo"
-          @continuar="jogarNovamente"
+        <ModalResumoSessao
+          v-if="modal === 'resumo-sessao'"
+          :premios="premiosSessao"
+          @fechar="onFecharJogo"
         />
+      </Transition>
+
+      <!-- Fim de sessao sem nenhum premio -->
+      <Transition name="modal">
+        <ModalSemPremio v-if="modal === 'sem-premio'" @fechar="onFecharJogo" />
       </Transition>
     </div>
   </div>

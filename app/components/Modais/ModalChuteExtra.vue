@@ -18,10 +18,7 @@
     <h2 class="card-title">Chute Extra!</h2>
     <p class="card-sub">Essa cobranca nao contou como chance.</p>
 
-    <Botao
-      :titulo="ultimaChance ? 'Jogar novamente' : 'Continuar jogando'"
-      @click="$emit('continuar')"
-    />
+    <Botao titulo="Continuar jogando" @click="$emit('continuar')" />
   </ModalArea>
 </template>
 
@@ -29,7 +26,6 @@
 import ModalArea from "./ModalArea.vue";
 import Botao from "./Botao.vue";
 
-defineProps<{ ultimaChance: boolean }>();
 defineEmits<{ continuar: [] }>();
 </script>
 

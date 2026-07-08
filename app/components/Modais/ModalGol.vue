@@ -27,10 +27,7 @@
       <strong class="prize-value">{{ premio?.nome }}</strong>
     </div>
 
-    <Botao
-      :titulo="ultimaChance ? 'Jogar novamente' : 'Continuar jogando'"
-      @click="$emit('continuar')"
-    />
+    <Botao titulo="Continuar jogando" @click="$emit('continuar')" />
   </ModalArea>
 </template>
 
@@ -39,7 +36,7 @@ import type { PenaltyPlayResult } from "~/types/game";
 import ModalArea from "./ModalArea.vue";
 import Botao from "./Botao.vue";
 
-defineProps<{ premio: PenaltyPlayResult | null; ultimaChance: boolean }>();
+defineProps<{ premio: PenaltyPlayResult | null }>();
 defineEmits<{ continuar: [] }>();
 </script>
 
