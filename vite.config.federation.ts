@@ -49,6 +49,9 @@ export default defineConfig({
         // Nome estavel (sem hash) pro CSS -- o Host precisa referenciar esse
         // arquivo por um caminho previsivel pra injetar o <link> manualmente
         // (Module Federation nao injeta CSS de remotes automaticamente).
+        // O nome aqui (`penalti-remote.css`) precisa bater com CSS_DO_REMOTE
+        // em app/pages/mf-demo.vue -- os dois nao estao ligados por uma
+        // constante compartilhada.
         assetFileNames: (info) =>
           info.name?.endsWith('.css') ? 'assets/penalti-remote.css' : 'assets/[name]-[hash][extname]'
       }

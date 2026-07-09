@@ -10,7 +10,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, shallowRef } from 'vue'
+import { onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import * as Vue from 'vue'
 import { init, loadRemote } from '@module-federation/runtime'
 import { MOCK_SESSION_SIZE, gerarSessaoMock } from '~/mocks/devHostSimulator'
@@ -46,17 +46,31 @@ function onFechar() {
  * (evento `load`) antes de montar o remote: sem esse aguardo, o componente
  * pode renderizar um instante antes do CSS aplicar, o que quebra o
  * `position:absolute` do canvas e causa um loop de resize no motor 3D.
+ *
+ * O caminho abaixo precisa bater com `assetFileNames` em
+ * `vite.config.federation.ts` (nome fixo `penalti-remote.css`) -- os dois
+ * nao estao ligados por uma constante compartilhada, entao uma mudanca num
+ * dos dois lados exige atualizar o outro.
  */
+const CSS_DO_REMOTE = '/mf/assets/penalti-remote.css'
+let linkCssRemote: HTMLLinkElement | null = null
+
 function carregarCssDoRemote(): Promise<void> {
   return new Promise((resolve, reject) => {
     const link = document.createElement('link')
     link.rel = 'stylesheet'
-    link.href = '/mf/assets/penalti-remote.css'
+    link.href = CSS_DO_REMOTE
     link.onload = () => resolve()
     link.onerror = () => reject(new Error('Falha ao carregar CSS do remote'))
     document.head.appendChild(link)
+    linkCssRemote = link
   })
 }
+
+onUnmounted(() => {
+  linkCssRemote?.remove()
+  linkCssRemote = null
+})
 
 onMounted(async () => {
   try {
