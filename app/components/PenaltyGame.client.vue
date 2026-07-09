@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import type { ShotOutcome } from '~/game/types'
 import type { PenaltyPlayResult } from '~/types/game'
 import { filtrarPremiosGanhados } from '~/game/session'
@@ -152,10 +152,18 @@ function confirmarChutarTudo() {
   }, 1500)
 }
 
-onMounted(() => {
+onMounted(async () => {
   updateLayoutMode()
   window.addEventListener('resize', updateLayoutMode)
   document.addEventListener('visibilitychange', handleVisibilityChange)
+
+  // Espera o proximo tick antes de checar a ref: no primeiro mount (cold
+  // start / hidratacao do .client.vue) o canvasRef pode ainda nao estar
+  // vinculado no exato instante em que onMounted dispara -- sem esse
+  // respiro o motor 3D as vezes nunca monta (canvas fica no tamanho
+  // padrao do navegador, sem erro nenhum). Remonts via troca de :key nao
+  // sofrem disso pois o ciclo de patch ja esta "quente".
+  await nextTick()
 
   if (!canvasRef.value) return
   mountEngine(canvasRef.value, {
