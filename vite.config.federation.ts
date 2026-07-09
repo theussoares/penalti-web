@@ -37,6 +37,9 @@ export default defineConfig({
     // public/ verbatim) -- sem precisar de nenhum passo extra de copia.
     outDir: 'public/mf',
     emptyOutDir: true,
+    // Desativa a copia automatica do publicDir pra evitar duplicar assets
+    // estaticos (ambient.mp3, crowd.mp3, goal.mp3, images/, models/) em public/mf/
+    copyPublicDir: false,
     // Sem isso o Vite tenta default pra ./index.html como entry (nao existe
     // nesse projeto Nuxt); o federation() plugin nao fornece um entry
     // sozinho, entao apontamos pro proprio componente exposto.
