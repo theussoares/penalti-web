@@ -8,7 +8,8 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "build:mf": "vite build --config vite.config.federation.ts"
   },
   "dependencies": {
     "@types/canvas-confetti": "^1.9.0",
@@ -20,7 +21,11 @@
   },
   "devDependencies": {
     "@gltf-transform/cli": "^4.4.1",
+    "@module-federation/runtime": "^2.7.0",
+    "@module-federation/vite": "^1.16.14",
     "@types/three": "^0.185.0",
+    "@vitejs/plugin-vue": "^6.0.7",
+    "vite": "^8.1.4",
     "vitest": "^4.1.9"
   }
 }
