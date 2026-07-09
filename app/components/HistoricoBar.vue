@@ -52,6 +52,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import type { PenaltyPlayResult } from "~/types/game";
 
 const props = defineProps<{ history: PenaltyPlayResult[] }>();
