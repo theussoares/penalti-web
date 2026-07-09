@@ -7,7 +7,8 @@ export type ModalState =
   | 'chute-extra'
   | 'chutar-tudo-confirmar'
   | 'chutar-tudo-progresso'
-  | 'resumo-tudo'
+  | 'resumo-sessao'
+  | 'sem-premio'
 
 export function useGameModals() {
   const modal = ref<ModalState>('none')
@@ -36,8 +37,12 @@ export function useGameModals() {
     modal.value = 'chutar-tudo-progresso'
   }
 
-  function openResumoTudo() {
-    modal.value = 'resumo-tudo'
+  function openResumoSessao() {
+    modal.value = 'resumo-sessao'
+  }
+
+  function openSemPremio() {
+    modal.value = 'sem-premio'
   }
 
   return {
@@ -48,6 +53,7 @@ export function useGameModals() {
     openChuteExtraModal,
     openChutarTudoConfirm,
     openChutarTudoProgresso,
-    openResumoTudo
+    openResumoSessao,
+    openSemPremio
   }
 }

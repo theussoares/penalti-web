@@ -1,18 +1,14 @@
 <template>
-  <ModalArea aria-label="Resumo do lote" variant="win">
-    <h2 class="card-title">Resultado do lote</h2>
+  <ModalArea aria-label="Resumo da sessao" variant="win">
+    <h2 class="card-title">Resumo da sessao</h2>
 
-    <p v-if="premios.length === 0" class="card-sub">
-      Nenhum premio dessa vez — respira e chuta de novo.
-    </p>
-
-    <ul v-else class="lista-premios">
+    <ul class="lista-premios">
       <li v-for="(premio, i) in premios" :key="i" class="item-premio">
         {{ premio.nome }}
       </li>
     </ul>
 
-    <Botao titulo="Jogar novamente" @click="$emit('continuar')" />
+    <Botao titulo="Fechar" @click="$emit('fechar')" />
   </ModalArea>
 </template>
 
@@ -22,7 +18,7 @@ import ModalArea from "./ModalArea.vue";
 import Botao from "./Botao.vue";
 
 defineProps<{ premios: PremioGanho[] }>();
-defineEmits<{ continuar: [] }>();
+defineEmits<{ fechar: [] }>();
 </script>
 
 <style scoped>
@@ -31,12 +27,6 @@ defineEmits<{ continuar: [] }>();
   font-size: 28px;
   font-weight: 900;
   color: #fff;
-}
-
-.card-sub {
-  margin: 0;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.72);
 }
 
 .lista-premios {

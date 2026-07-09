@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { chancesRestantes, filtrarPremiosGanhados, isSessionOver } from './session'
-import type { PenaltyPlayResult } from '../composables/useGameApi'
+import type { PenaltyPlayResult } from '../types/game'
 
 function item(overrides: Partial<PenaltyPlayResult>): PenaltyPlayResult {
   return {

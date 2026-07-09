@@ -21,10 +21,7 @@
     <p class="card-sub">O goleiro voou no canto certo.</p>
     <p class="card-encourage">Respira, ajusta a mira e manda de novo.</p>
 
-    <Botao
-      :titulo="ultimaChance ? 'Jogar novamente' : 'Tentar novamente'"
-      @click="$emit('continuar')"
-    />
+    <Botao titulo="Tentar novamente" @click="$emit('continuar')" />
   </ModalArea>
 </template>
 
@@ -32,7 +29,6 @@
 import ModalArea from "./ModalArea.vue";
 import Botao from "./Botao.vue";
 
-defineProps<{ ultimaChance: boolean }>();
 defineEmits<{ continuar: [] }>();
 </script>
 

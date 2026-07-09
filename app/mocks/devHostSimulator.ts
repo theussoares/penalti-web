@@ -1,20 +1,8 @@
-import { PENALTY_SCENARIOS } from '~/mocks/penaltySequences'
-import type { GameInfo, PenaltyPlayResult } from '~/types/game'
+import { PENALTY_SCENARIOS } from './penaltySequences'
+import type { PenaltyPlayResult } from '~/types/game'
 
-export const USE_MOCK = true
-
-/** Tamanho da sequencia buscada no primeiro "Chutar" da sessao (mock). */
+/** Tamanho da sessao mock gerada pelo harness de dev (`pages/index.vue`). */
 export const MOCK_SESSION_SIZE = 5
-
-export const MOCK_GAMES: GameInfo[] = [
-  {
-    id: 'penalty-premiado',
-    name: 'Penalti Premiado',
-    description: 'Venca o goleiro e ganhe na hora.',
-    headline: 'Valendo premios em dinheiro e cotas',
-    active: true
-  }
-]
 
 const REPLAY_CHANCE = 0.1
 const WIN_CHANCE = 0.35
@@ -52,9 +40,13 @@ export function pickScenario(
   return cenario ? [...cenario] : null
 }
 
-export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-export function getApiBaseUrl(): string {
-  if (typeof window === 'undefined') return ''
-  return new URLSearchParams(window.location.search).get('api') ?? ''
+/**
+ * Gera a sessao mock inteira que o harness de dev passa como prop `resultados`
+ * pro PenaltyGame — cenario fixo se `cenarioKey` bater com PENALTY_SCENARIOS,
+ * senao `count` itens aleatorios.
+ */
+export function gerarSessaoMock(count: number, cenarioKey: string | null = null): PenaltyPlayResult[] {
+  const cenario = pickScenario(cenarioKey)
+  if (cenario) return cenario
+  return Array.from({ length: count }, mockPlayResult)
 }

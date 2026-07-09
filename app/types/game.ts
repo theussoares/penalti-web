@@ -1,12 +1,3 @@
-export interface GameInfo {
-  id: string
-  name: string
-  description: string
-  /** Chamada exibida no topo do jogo, ex: "Valendo R$ 500" */
-  headline: string
-  active: boolean
-}
-
 export interface PenaltyPlayResult {
   id: number
   /** Identificador unico da jogada, mesmo padrao dos mocks de Roleta. */

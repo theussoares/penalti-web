@@ -1,9 +1,9 @@
-import type { PenaltyPlayResult } from '../composables/useGameApi'
+import type { PenaltyPlayResult } from '../types/game'
 
 /**
  * Cenarios fixos para testar fluxos de UI sem depender do gerador aleatorio
- * de useGameApi.ts. Selecionaveis via query string `?cenario=<chave>`
- * (ver pickScenario em useGameApi.ts), so quando USE_MOCK esta ativo.
+ * de devHostSimulator.ts. Selecionaveis via query string `?cenario=<chave>`
+ * (ver pickScenario em devHostSimulator.ts).
  */
 export const PENALTY_SCENARIOS: Record<string, PenaltyPlayResult[]> = {
   todas_derrotas: [
