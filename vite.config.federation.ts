@@ -44,7 +44,14 @@ export default defineConfig({
     // nesse projeto Nuxt); o federation() plugin nao fornece um entry
     // sozinho, entao apontamos pro proprio componente exposto.
     rollupOptions: {
-      input: fileURLToPath(new URL('./app/components/PenaltyGame.client.vue', import.meta.url))
+      input: fileURLToPath(new URL('./app/components/PenaltyGame.client.vue', import.meta.url)),
+      output: {
+        // Nome estavel (sem hash) pro CSS -- o Host precisa referenciar esse
+        // arquivo por um caminho previsivel pra injetar o <link> manualmente
+        // (Module Federation nao injeta CSS de remotes automaticamente).
+        assetFileNames: (info) =>
+          info.name?.endsWith('.css') ? 'assets/penalti-remote.css' : 'assets/[name]-[hash][extname]'
+      }
     }
   }
 })

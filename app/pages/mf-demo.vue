@@ -11,6 +11,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, shallowRef } from 'vue'
+import * as Vue from 'vue'
 import { init, loadRemote } from '@module-federation/runtime'
 import { MOCK_SESSION_SIZE, gerarSessaoMock } from '~/mocks/devHostSimulator'
 import type { PenaltyPlayResult } from '~/types/game'
@@ -39,8 +40,27 @@ function onFechar() {
   resultados.value = gerarSessaoMock(MOCK_SESSION_SIZE, cenarioDaUrl())
 }
 
+/**
+ * Module Federation nao injeta o CSS do remote automaticamente -- o Host
+ * precisa carregar isso manualmente. Espera o <link> terminar de carregar
+ * (evento `load`) antes de montar o remote: sem esse aguardo, o componente
+ * pode renderizar um instante antes do CSS aplicar, o que quebra o
+ * `position:absolute` do canvas e causa um loop de resize no motor 3D.
+ */
+function carregarCssDoRemote(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = '/mf/assets/penalti-remote.css'
+    link.onload = () => resolve()
+    link.onerror = () => reject(new Error('Falha ao carregar CSS do remote'))
+    document.head.appendChild(link)
+  })
+}
+
 onMounted(async () => {
   try {
+    await carregarCssDoRemote()
     await init({
       name: 'mf-demo-host',
       // `type: 'module'` -- o remoteEntry.js gerado pelo `@module-federation/vite`
@@ -49,7 +69,10 @@ onMounted(async () => {
       // `<script type="module">` em vez do `<script>` classico (global var/UMD)
       // que e' o default do runtime pra remotes sem essa flag -- sem isso o
       // browser lanca "Cannot use import statement outside a module".
-      remotes: [{ name: 'penalti', entry: '/mf/remoteEntry.js', type: 'module' }]
+      remotes: [{ name: 'penalti', entry: '/mf/remoteEntry.js', type: 'module' }],
+      shared: {
+        vue: { version: '3.5.39', shareConfig: { singleton: true, requiredVersion: '^3.5.0' }, lib: () => Vue }
+      }
     })
     const mod = (await loadRemote('penalti/PenaltyGame')) as { default: unknown }
     PenaltyGameRemote.value = mod.default
